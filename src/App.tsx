@@ -48,7 +48,31 @@ export default function App() {
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [newReview, setNewReview] = useState({ user_name: '', rating: 5, comment: '' });
 
+  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured'>('checking');
+
   useEffect(() => {
+    const checkConnection = async () => {
+      if (!supabase) {
+        setSupabaseStatus('not-configured');
+        return;
+      }
+      try {
+        // Test connection by fetching one ID from reviews
+        const { error } = await supabase.from('reviews').select('id').limit(1);
+        if (error) {
+          console.warn('Supabase connection test returned error:', error);
+          setSupabaseStatus('error');
+        } else {
+          console.log('Supabase connection test successful');
+          setSupabaseStatus('connected');
+        }
+      } catch (err) {
+        console.error('Supabase connection test failed:', err);
+        setSupabaseStatus('error');
+      }
+    };
+    
+    checkConnection();
     fetchProducts();
     fetchReviews();
     fetchAds();
@@ -65,11 +89,8 @@ export default function App() {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      if (data && data.length > 0) {
-        setProducts(data);
-      } else {
-        throw new Error('Supabase products table is empty');
-      }
+      console.log('Successfully fetched products from Supabase');
+      setProducts(data || []);
     } catch (error) {
       console.error('Error fetching products from Supabase (using fallback):', error);
       try {
@@ -92,11 +113,8 @@ export default function App() {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      if (data && data.length > 0) {
-        setReviews(data);
-      } else {
-        throw new Error('Supabase reviews table is empty');
-      }
+      console.log('Successfully fetched reviews from Supabase');
+      setReviews(data || []);
     } catch (error) {
       console.error('Error fetching reviews from Supabase (using fallback):', error);
       try {
@@ -119,12 +137,8 @@ export default function App() {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      
-      if (data && data.length > 0) {
-        setAds(data);
-      } else {
-        throw new Error('Supabase table is empty');
-      }
+      console.log('Successfully fetched ads from Supabase');
+      setAds(data || []);
     } catch (error) {
       console.error('Error fetching ads from Supabase (using fallback):', error);
       try {
@@ -184,18 +198,41 @@ export default function App() {
       let success = false;
       let errorMessage = '';
 
-      try {
-        if (!supabase) throw new Error('Supabase not configured');
-        const { error } = await supabase
-          .from('reviews')
-          .insert([newReview]);
-        
-        if (error) throw error;
-        success = true;
-      } catch (error: any) {
-        console.error('Error adding review to Supabase (using fallback):', error);
-        errorMessage = error.message;
-        
+      // Try Supabase first
+      if (supabase) {
+        try {
+          const { error } = await supabase
+            .from('reviews')
+            .insert([newReview]);
+          
+          if (error) throw error;
+          success = true;
+          console.log('Review successfully added to Supabase');
+        } catch (error: any) {
+          console.error('Error adding review to Supabase:', error);
+          errorMessage = `Supabase Error: ${error.message || JSON.stringify(error)}`;
+          
+          // Fallback to local API if Supabase fails
+          try {
+            const res = await fetch('/api/reviews', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newReview)
+            });
+            if (res.ok) {
+              success = true;
+              console.log('Review successfully added to local API (fallback)');
+            } else {
+              const errorData = await res.json();
+              errorMessage += ` | Local API Error: ${errorData.error || 'Unknown'}`;
+            }
+          } catch (localError: any) {
+            console.error('Local API also failed:', localError);
+            errorMessage += ` | Local API Exception: ${localError.message}`;
+          }
+        }
+      } else {
+        // No Supabase, use local API directly
         try {
           const res = await fetch('/api/reviews', {
             method: 'POST',
@@ -209,7 +246,7 @@ export default function App() {
             errorMessage = errorData.error || 'Помилка локального сервера';
           }
         } catch (localError: any) {
-          console.error('Local API also failed:', localError);
+          console.error('Local API failed:', localError);
           errorMessage = localError.message;
         }
       }
@@ -220,7 +257,7 @@ export default function App() {
         setShowReviewForm(false);
         setNewReview({ user_name: '', rating: 5, comment: '' });
       } else {
-        alert('Не вдалося опублікувати відгук: ' + errorMessage);
+        alert('Не вдалося опублікувати відгук:\n' + errorMessage);
       }
     } catch (error: any) {
       console.error('Error in handleAddReview:', error);
@@ -282,6 +319,17 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-stone-100 rounded-full">
+              <div className={`w-2 h-2 rounded-full ${
+                supabaseStatus === 'connected' ? 'bg-emerald-500' : 
+                supabaseStatus === 'checking' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'
+              }`} />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                {supabaseStatus === 'connected' ? 'Supabase Live' : 
+                 supabaseStatus === 'checking' ? 'Connecting...' : 
+                 supabaseStatus === 'not-configured' ? 'Supabase Offline' : 'Supabase Error'}
+              </span>
+            </div>
             <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
               <input 

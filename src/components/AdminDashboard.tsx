@@ -57,11 +57,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      if (data && data.length > 0) {
-        setProducts(data);
-      } else {
-        throw new Error('Supabase products table is empty');
-      }
+      setProducts(data || []);
     } catch (error) {
       console.error('Error fetching products from Supabase (using fallback):', error);
       try {
@@ -84,11 +80,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      if (data && data.length > 0) {
-        setAds(data);
-      } else {
-        throw new Error('Supabase table is empty');
-      }
+      setAds(data || []);
     } catch (error) {
       console.error('Error fetching ads from Supabase (using fallback):', error);
       try {
