@@ -49,9 +49,30 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   const fetchProducts = async () => {
-    const res = await fetch('/api/products');
-    const data = await res.json();
-    setProducts(data);
+    try {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setProducts(data);
+      } else {
+        throw new Error('Supabase products table is empty');
+      }
+    } catch (error) {
+      console.error('Error fetching products from Supabase (using fallback):', error);
+      try {
+        const res = await fetch('/api/products');
+        const data = await res.json();
+        setProducts(data || []);
+      } catch (localError) {
+        console.error('Local API also failed for products:', localError);
+        setProducts([]);
+      }
+    }
   };
 
   const fetchAds = async () => {
@@ -95,28 +116,47 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const method = editingProduct ? 'PUT' : 'POST';
-      const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
-      
       const price = parseFloat(formData.price);
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          price,
-        })
-      });
+      let success = false;
+      try {
+        if (!supabase) throw new Error('Supabase not configured');
+        
+        if (editingProduct) {
+          const { error } = await supabase
+            .from('products')
+            .update({ ...formData, price })
+            .eq('id', editingProduct.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('products')
+            .insert([{ ...formData, price }]);
+          if (error) throw error;
+        }
+        success = true;
+      } catch (error) {
+        console.error('Error submitting product to Supabase (using fallback):', error);
+        const method = editingProduct ? 'PUT' : 'POST';
+        const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...formData, price })
+        });
+        if (res.ok) success = true;
+      }
 
-      if (!res.ok) throw new Error('Помилка при збереженні товару');
-
-      alert(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
-      setIsAdding(false);
-      setEditingProduct(null);
-      setFormData({ name: '', description: '', price: '', images: [] });
-      fetchProducts();
+      if (success) {
+        alert(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
+        setIsAdding(false);
+        setEditingProduct(null);
+        setFormData({ name: '', description: '', price: '', images: [] });
+        fetchProducts();
+      } else {
+        throw new Error('Не вдалося зберегти товар');
+      }
     } catch (error: any) {
       console.error('Error submitting product:', error);
       alert('Помилка: ' + error.message);
@@ -175,26 +215,49 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   const handleDelete = async (id: number) => {
     if (confirm('Ви впевнені?')) {
-      await fetch(`/api/products/${id}`, { method: 'DELETE' });
-      fetchProducts();
+      try {
+        let success = false;
+        try {
+          if (!supabase) throw new Error('Supabase not configured');
+          const { error } = await supabase
+            .from('products')
+            .delete()
+            .eq('id', id);
+          if (error) throw error;
+          success = true;
+        } catch (error) {
+          console.error('Error deleting product from Supabase (using fallback):', error);
+          const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+          if (res.ok) success = true;
+        }
+        if (success) fetchProducts();
+      } catch (error) {
+        console.error('Error in handleDelete:', error);
+      }
     }
   };
 
   const handleDeleteAd = async (id: number) => {
     if (confirm('Ви впевнені?')) {
       try {
-        if (!supabase) throw new Error('Supabase not configured');
-        const { error } = await supabase
-          .from('ads')
-          .delete()
-          .eq('id', id);
-        
-        if (error) throw error;
+        let success = false;
+        try {
+          if (!supabase) throw new Error('Supabase not configured');
+          const { error } = await supabase
+            .from('ads')
+            .delete()
+            .eq('id', id);
+          if (error) throw error;
+          success = true;
+        } catch (error) {
+          console.error('Error deleting ad from Supabase (using fallback):', error);
+          const res = await fetch(`/api/ads/${id}`, { method: 'DELETE' });
+          if (res.ok) success = true;
+        }
+        if (success) fetchAds();
       } catch (error) {
-        console.error('Error deleting ad from Supabase (using fallback):', error);
-        await fetch(`/api/ads/${id}`, { method: 'DELETE' });
+        console.error('Error in handleDeleteAd:', error);
       }
-      fetchAds();
     }
   };
 

@@ -57,15 +57,57 @@ export default function App() {
   }, []);
 
   const fetchProducts = async () => {
-    const res = await fetch('/api/products');
-    const data = await res.json();
-    setProducts(data);
+    try {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setProducts(data);
+      } else {
+        throw new Error('Supabase products table is empty');
+      }
+    } catch (error) {
+      console.error('Error fetching products from Supabase (using fallback):', error);
+      try {
+        const res = await fetch('/api/products');
+        const data = await res.json();
+        setProducts(data || []);
+      } catch (localError) {
+        console.error('Local API also failed for products:', localError);
+        setProducts([]);
+      }
+    }
   };
 
   const fetchReviews = async () => {
-    const res = await fetch('/api/reviews');
-    const data = await res.json();
-    setReviews(data);
+    try {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setReviews(data);
+      } else {
+        throw new Error('Supabase reviews table is empty');
+      }
+    } catch (error) {
+      console.error('Error fetching reviews from Supabase (using fallback):', error);
+      try {
+        const res = await fetch('/api/reviews');
+        const data = await res.json();
+        setReviews(data || []);
+      } catch (localError) {
+        console.error('Local API also failed for reviews:', localError);
+        setReviews([]);
+      }
+    }
   };
 
   const fetchAds = async () => {
@@ -135,15 +177,33 @@ export default function App() {
 
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/reviews', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newReview)
-    });
-    if (res.ok) {
-      fetchReviews();
-      setShowReviewForm(false);
-      setNewReview({ user_name: '', rating: 5, comment: '' });
+    try {
+      let success = false;
+      try {
+        if (!supabase) throw new Error('Supabase not configured');
+        const { error } = await supabase
+          .from('reviews')
+          .insert([newReview]);
+        
+        if (error) throw error;
+        success = true;
+      } catch (error) {
+        console.error('Error adding review to Supabase (using fallback):', error);
+        const res = await fetch('/api/reviews', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newReview)
+        });
+        if (res.ok) success = true;
+      }
+
+      if (success) {
+        fetchReviews();
+        setShowReviewForm(false);
+        setNewReview({ user_name: '', rating: 5, comment: '' });
+      }
+    } catch (error) {
+      console.error('Error in handleAddReview:', error);
     }
   };
 
