@@ -175,10 +175,15 @@ export default function App() {
     }
   };
 
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmittingReview(true);
     try {
       let success = false;
+      let errorMessage = '';
+
       try {
         if (!supabase) throw new Error('Supabase not configured');
         const { error } = await supabase
@@ -187,23 +192,41 @@ export default function App() {
         
         if (error) throw error;
         success = true;
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error adding review to Supabase (using fallback):', error);
-        const res = await fetch('/api/reviews', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newReview)
-        });
-        if (res.ok) success = true;
+        errorMessage = error.message;
+        
+        try {
+          const res = await fetch('/api/reviews', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newReview)
+          });
+          if (res.ok) {
+            success = true;
+          } else {
+            const errorData = await res.json();
+            errorMessage = errorData.error || 'Помилка локального сервера';
+          }
+        } catch (localError: any) {
+          console.error('Local API also failed:', localError);
+          errorMessage = localError.message;
+        }
       }
 
       if (success) {
+        alert('Дякуємо! Ваш відгук опубліковано.');
         fetchReviews();
         setShowReviewForm(false);
         setNewReview({ user_name: '', rating: 5, comment: '' });
+      } else {
+        alert('Не вдалося опублікувати відгук: ' + errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in handleAddReview:', error);
+      alert('Виникла непередбачувана помилка');
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
@@ -738,8 +761,18 @@ export default function App() {
                     placeholder="Поділіться вашими враженнями..."
                   />
                 </div>
-                <button className="w-full bg-stone-900 text-white py-4 rounded-xl font-bold hover:bg-stone-800 transition-colors">
-                  Опублікувати відгук
+                <button 
+                  disabled={isSubmittingReview}
+                  className={`w-full bg-stone-900 text-white py-4 rounded-xl font-bold hover:bg-stone-800 transition-colors flex items-center justify-center gap-2 ${isSubmittingReview ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  {isSubmittingReview ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Публікація...
+                    </>
+                  ) : (
+                    'Опублікувати відгук'
+                  )}
                 </button>
               </form>
             </motion.div>
