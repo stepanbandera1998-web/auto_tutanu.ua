@@ -11,20 +11,23 @@ import {
   LogOut,
   Image as ImageIcon,
   X,
-  Megaphone
+  Megaphone,
+  Star,
+  MessageSquare
 } from 'lucide-react';
-import { Product, Stats, Ad } from '../types';
+import { Product, Stats, Ad, Review } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../services/supabase';
 
 export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isAddingAd, setIsAddingAd] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [activeView, setActiveView] = useState<'products' | 'ads'>('products');
+  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews'>('products');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -43,10 +46,55 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     fetchProducts();
     fetchAds();
+    fetchReviews();
     fetchStats();
     const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const fetchReviews = async () => {
+    let allReviews: any[] = [];
+    let supabaseSuccess = false;
+
+    try {
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('reviews')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        if (data) {
+          allReviews = [...data];
+          supabaseSuccess = true;
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching reviews from Supabase:', error);
+    }
+
+    try {
+      const res = await fetch('/api/reviews');
+      if (res.ok) {
+        const localData = await res.json();
+        if (Array.isArray(localData)) {
+          // Merge and remove duplicates by some criteria or just append if they are different
+          // Since IDs might overlap, we can't easily merge by ID.
+          // Let's just use local if Supabase failed or is empty
+          if (!supabaseSuccess || allReviews.length === 0) {
+            allReviews = localData;
+          } else {
+            // If both have data, we might want to show both, but it's tricky with IDs.
+            // For now, let's just prioritize Supabase if it has data.
+          }
+        }
+      }
+    } catch (localError) {
+      console.error('Local API also failed for reviews:', localError);
+    }
+
+    setReviews(allReviews);
+  };
 
   const fetchProducts = async () => {
     try {
@@ -253,6 +301,111 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  const handleDeleteReview = async (id: number) => {
+    if (confirm('Ви впевнені, що хочете видалити цей відгук?')) {
+      try {
+        let success = false;
+        try {
+          if (!supabase) throw new Error('Supabase not configured');
+          const { error } = await supabase
+            .from('reviews')
+            .delete()
+            .eq('id', id);
+          if (error) throw error;
+          success = true;
+        } catch (error) {
+          console.error('Error deleting review from Supabase (using fallback):', error);
+          const res = await fetch(`/api/reviews/${id}`, { method: 'DELETE' });
+          if (res.ok) success = true;
+        }
+        if (success) fetchReviews();
+      } catch (error) {
+        console.error('Error in handleDeleteReview:', error);
+      }
+    }
+  };
+
+  const handleSeedReviews = async () => {
+    if (!confirm('Ви впевнені, що хочете згенерувати 50 випадкових відгуків? Це може зайняти деякий час.')) return;
+    
+    setIsSubmitting(true);
+    console.log('Starting to seed reviews...');
+    try {
+      const names = [
+        "Олександр", "Марія", "Іван", "Олена", "Дмитро", "Тетяна", "Андрій", "Оксана", "Сергій", "Наталія",
+        "Віталій", "Юлія", "Максим", "Світлана", "Артем", "Ірина", "Денис", "Ольга", "Микола", "Анна",
+        "Василь", "Вікторія", "Павло", "Людмила", "Євген", "Галина", "Роман", "Надія", "Тарас", "Валентина"
+      ];
+      const comments = [
+        "Чудові диски, якість на висоті! Вже рік катаюсь, все супер.",
+        "Швидка доставка, рекомендую цей магазин всім знайомим.",
+        "Дуже задоволений покупкою, виглядають круто на моєму авто.",
+        "Найкращий сервіс в Україні. Допомогли підібрати правильний виліт.",
+        "Все підійшло ідеально, дякую за професійну консультацію!",
+        "Великий вибір та приємні ціни. Буду звертатися ще.",
+        "Професійна консультація, допомогли з вибором дисків для BMW.",
+        "Диски прийшли добре запаковані, без жодних подряпин.",
+        "Якісний товар за помірну ціну. Однозначно 5 зірок.",
+        "Буду замовляти ще! Дуже задоволений відношенням до клієнта.",
+        "Диски просто вогонь! Машина стала виглядати зовсім інакше.",
+        "Дякую за оперативність. Замовив вчора, сьогодні вже на пошті.",
+        "Якість фарбування вражає. Навіть після зими як нові.",
+        "Приємно мати справу з професіоналами. Рекомендую!",
+        "Найкращі ціни на оригінальні диски. Перевірено часом.",
+        "Дуже ввічливий персонал. Все розказали і показали.",
+        "Шукав саме такі диски дуже довго. Дякую, що знайшли їх для мене!",
+        "Доставка в Одесу зайняла всього один день. Супер!",
+        "Параметри підійшли ідеально, ніде не затирає.",
+        "Задоволений на всі 100%. Кращого варіанту не знайти."
+      ];
+
+      const newReviews = [];
+      const startDate = new Date('2021-01-01T00:00:00Z').getTime();
+      const endDate = new Date().getTime();
+
+      for (let i = 0; i < 50; i++) {
+        const randomTimestamp = startDate + Math.random() * (endDate - startDate);
+        newReviews.push({
+          user_name: names[Math.floor(Math.random() * names.length)],
+          rating: 4 + Math.floor(Math.random() * 2),
+          comment: comments[Math.floor(Math.random() * comments.length)],
+          created_at: new Date(randomTimestamp).toISOString()
+        });
+      }
+
+      let success = false;
+      if (supabase) {
+        try {
+          const { error } = await supabase.from('reviews').insert(newReviews);
+          if (error) throw error;
+          success = true;
+          console.log('Successfully seeded reviews to Supabase');
+        } catch (supabaseError) {
+          console.error('Supabase seeding failed, falling back to local API:', supabaseError);
+        }
+      }
+
+      if (!success) {
+        const res = await fetch('/api/reviews/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newReviews)
+        });
+        if (!res.ok) throw new Error('Помилка при збереженні в локальну базу');
+        success = true;
+        console.log('Successfully seeded reviews to local API');
+      }
+      
+      alert('50 відгуків успішно згенеровано!');
+      fetchReviews();
+    } catch (error: any) {
+      console.error('Error seeding reviews:', error);
+      alert('Помилка при генерації: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const [imageUrlInput, setImageUrlInput] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const adFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -359,11 +512,20 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
             {activeView === 'ads' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
+          <button 
+            onClick={() => setActiveView('reviews')}
+            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'reviews' ? 'text-stone-900' : 'text-stone-400'}`}
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare size={20} /> Відгуки
+            </div>
+            {activeView === 'reviews' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
+          </button>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4">
-        {activeView === 'products' ? (
+        {activeView === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Product List */}
             <div className="lg:col-span-2 space-y-6">
@@ -456,7 +618,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </div>
             </div>
           </div>
-        ) : (
+        )}
+
+        {activeView === 'ads' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Оголошення</h2>
@@ -513,6 +677,73 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <td colSpan={5} className="px-6 py-12 text-center text-stone-400">
                         <Megaphone className="mx-auto mb-2 opacity-20" size={32} />
                         <p>Оголошень поки немає</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeView === 'reviews' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Відгуки клієнтів</h2>
+              <button 
+                onClick={handleSeedReviews}
+                disabled={isSubmitting}
+                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
+              >
+                <TrendingUp size={20} className={isSubmitting ? 'animate-spin' : ''} /> 
+                {isSubmitting ? 'Генерую...' : 'Згенерувати 50 відгуків'}
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-stone-50 border-bottom border-stone-200">
+                  <tr>
+                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Клієнт</th>
+                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Рейтинг</th>
+                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Коментар</th>
+                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Дата</th>
+                    <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {reviews.length > 0 ? reviews.map((review) => (
+                    <tr key={review.id} className="hover:bg-stone-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <span className="font-medium">{review.user_name}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex gap-0.5 text-amber-400">
+                          {[...Array(5)].map((_, i) => (
+                            <Star key={i} size={14} fill={i < review.rating ? "currentColor" : "none"} />
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm text-stone-600 line-clamp-2 max-w-md">{review.comment}</p>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-stone-500">
+                        {new Date(review.created_at).toLocaleDateString('uk-UA')}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => handleDeleteReview(review.id)}
+                          className="p-2 text-stone-400 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-stone-400">
+                        <MessageSquare className="mx-auto mb-2 opacity-20" size={32} />
+                        <p>Відгуків поки немає</p>
                       </td>
                     </tr>
                   )}

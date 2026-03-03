@@ -105,27 +105,43 @@ export default function App() {
   };
 
   const fetchReviews = async () => {
+    let allReviews: any[] = [];
+    let supabaseSuccess = false;
+
     try {
-      if (!supabase) throw new Error('Supabase not configured');
-      const { data, error } = await supabase
-        .from('reviews')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      console.log('Successfully fetched reviews from Supabase');
-      setReviews(data || []);
-    } catch (error) {
-      console.error('Error fetching reviews from Supabase (using fallback):', error);
-      try {
-        const res = await fetch('/api/reviews');
-        const data = await res.json();
-        setReviews(data || []);
-      } catch (localError) {
-        console.error('Local API also failed for reviews:', localError);
-        setReviews([]);
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('reviews')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        if (data && data.length > 0) {
+          allReviews = [...data];
+          supabaseSuccess = true;
+          console.log('Successfully fetched reviews from Supabase');
+        }
       }
+    } catch (error) {
+      console.error('Error fetching reviews from Supabase:', error);
     }
+
+    try {
+      const res = await fetch('/api/reviews');
+      if (res.ok) {
+        const localData = await res.json();
+        if (Array.isArray(localData) && localData.length > 0) {
+          if (!supabaseSuccess || allReviews.length === 0) {
+            allReviews = localData;
+            console.log('Using reviews from local API');
+          }
+        }
+      }
+    } catch (localError) {
+      console.error('Local API also failed for reviews:', localError);
+    }
+
+    setReviews(allReviews);
   };
 
   const fetchAds = async () => {

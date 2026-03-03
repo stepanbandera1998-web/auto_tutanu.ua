@@ -51,28 +51,50 @@ db.exec(`
 // Seed data if empty
 const reviewsCount = db.prepare("SELECT COUNT(*) as count FROM reviews").get().count;
 if (reviewsCount === 0) {
-  const names = ["Олександр", "Марія", "Іван", "Олена", "Дмитро", "Тетяна", "Андрій", "Оксана", "Сергій", "Наталія"];
+  const names = [
+    "Олександр", "Марія", "Іван", "Олена", "Дмитро", "Тетяна", "Андрій", "Оксана", "Сергій", "Наталія",
+    "Віталій", "Юлія", "Максим", "Світлана", "Артем", "Ірина", "Денис", "Ольга", "Микола", "Анна",
+    "Василь", "Вікторія", "Павло", "Людмила", "Євген", "Галина", "Роман", "Надія", "Тарас", "Валентина"
+  ];
   const comments = [
-    "Чудові диски, якість на висоті!",
-    "Швидка доставка, рекомендую.",
-    "Дуже задоволений покупкою, виглядають круто.",
-    "Найкращий сервіс в Україні.",
-    "Все підійшло ідеально, дякую!",
-    "Великий вибір та приємні ціни.",
-    "Професійна консультація, допомогли з вибором.",
-    "Диски прийшли добре запаковані.",
-    "Якісний товар за помірну ціну.",
-    "Буду замовляти ще!"
+    "Чудові диски, якість на висоті! Вже рік катаюсь, все супер.",
+    "Швидка доставка, рекомендую цей магазин всім знайомим.",
+    "Дуже задоволений покупкою, виглядають круто на моєму авто.",
+    "Найкращий сервіс в Україні. Допомогли підібрати правильний виліт.",
+    "Все підійшло ідеально, дякую за професійну консультацію!",
+    "Великий вибір та приємні ціни. Буду звертатися ще.",
+    "Професійна консультація, допомогли з вибором дисків для BMW.",
+    "Диски прийшли добре запаковані, без жодних подряпин.",
+    "Якісний товар за помірну ціну. Однозначно 5 зірок.",
+    "Буду замовляти ще! Дуже задоволений відношенням до клієнта.",
+    "Диски просто вогонь! Машина стала виглядати зовсім інакше.",
+    "Дякую за оперативність. Замовив вчора, сьогодні вже на пошті.",
+    "Якість фарбування вражає. Навіть після зими як нові.",
+    "Приємно мати справу з професіоналами. Рекомендую!",
+    "Найкращі ціни на оригінальні диски. Перевірено часом.",
+    "Дуже ввічливий персонал. Все розказали і показали.",
+    "Шукав саме такі диски дуже довго. Дякую, що знайшли їх для мене!",
+    "Доставка в Одесу зайняла всього один день. Супер!",
+    "Параметри підійшли ідеально, ніде не затирає.",
+    "Задоволений на всі 100%. Кращого варіанту не знайти."
   ];
 
   const insertReview = db.prepare("INSERT INTO reviews (user_name, rating, comment, created_at) VALUES (?, ?, ?, ?)");
+  
+  // Start date: Jan 1, 2021
+  const startDate = new Date('2021-01-01T00:00:00Z').getTime();
+  // End date: Now
+  const endDate = new Date().getTime();
+
   for (let i = 0; i < 50; i++) {
     const name = names[Math.floor(Math.random() * names.length)];
     const comment = comments[Math.floor(Math.random() * comments.length)];
-    const rating = 4 + Math.floor(Math.random() * 2);
-    // Generate dates over the last 3 months
-    const date = new Date();
-    date.setDate(date.getDate() - Math.floor(Math.random() * 90));
+    const rating = 4 + Math.floor(Math.random() * 2); // 4 or 5 stars
+    
+    // Random date between 2021 and now
+    const randomTimestamp = startDate + Math.random() * (endDate - startDate);
+    const date = new Date(randomTimestamp);
+    
     insertReview.run(name, rating, comment, date.toISOString());
   }
 }
@@ -174,11 +196,31 @@ async function startServer() {
   });
 
   app.post("/api/reviews", (req, res) => {
-    const { user_name, rating, comment } = req.body;
+    const { user_name, rating, comment, created_at } = req.body;
     const result = db.prepare(
-      "INSERT INTO reviews (user_name, rating, comment) VALUES (?, ?, ?)"
-    ).run(user_name, rating, comment);
+      "INSERT INTO reviews (user_name, rating, comment, created_at) VALUES (?, ?, ?, ?)"
+    ).run(user_name, rating, comment, created_at || new Date().toISOString());
     res.json({ id: result.lastInsertRowid });
+  });
+
+  app.post("/api/reviews/bulk", (req, res) => {
+    const reviews = req.body;
+    if (!Array.isArray(reviews)) return res.status(400).json({ error: "Expected an array" });
+    
+    const insert = db.prepare("INSERT INTO reviews (user_name, rating, comment, created_at) VALUES (?, ?, ?, ?)");
+    const insertMany = db.transaction((reviews) => {
+      for (const review of reviews) {
+        insert.run(review.user_name, review.rating, review.comment, review.created_at || new Date().toISOString());
+      }
+    });
+    
+    insertMany(reviews);
+    res.json({ success: true, count: reviews.length });
+  });
+
+  app.delete("/api/reviews/:id", (req, res) => {
+    db.prepare("DELETE FROM reviews WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
   });
 
   // Ads API
