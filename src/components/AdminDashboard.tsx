@@ -18,6 +18,7 @@ import {
 import { Product, Stats, Ad, Review } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../services/supabase';
+import { GoogleGenAI } from "@google/genai";
 
 export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -32,7 +33,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     name: '',
     description: '',
     price: '',
-    images: [] as string[]
+    images: [] as string[],
+    sku: ''
   });
   const [adFormData, setAdFormData] = useState({
     title: '',
@@ -160,19 +162,25 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
       let success = false;
+      const productData = {
+        ...formData,
+        price,
+        sku: formData.sku || `AT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`
+      };
+
       try {
         if (!supabase) throw new Error('Supabase not configured');
         
         if (editingProduct) {
           const { error } = await supabase
             .from('products')
-            .update({ ...formData, price })
+            .update(productData)
             .eq('id', editingProduct.id);
           if (error) throw error;
         } else {
           const { error } = await supabase
             .from('products')
-            .insert([{ ...formData, price }]);
+            .insert([productData]);
           if (error) throw error;
         }
         success = true;
@@ -183,7 +191,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         const res = await fetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...formData, price })
+          body: JSON.stringify(productData)
         });
         if (res.ok) success = true;
       }
@@ -192,7 +200,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         alert(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
-        setFormData({ name: '', description: '', price: '', images: [] });
+        setFormData({ name: '', description: '', price: '', images: [], sku: '' });
         fetchProducts();
       } else {
         throw new Error('Не вдалося зберегти товар');
@@ -535,7 +543,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={() => {
                     setIsAdding(true);
                     setEditingProduct(null);
-                    setFormData({ name: '', description: '', price: '', images: [] });
+                    setFormData({ name: '', description: '', price: '', images: [], sku: '' });
                   }}
                   className="flex items-center gap-2 bg-stone-900 text-white px-4 py-2 rounded-xl hover:bg-stone-800 transition-colors"
                 >
@@ -547,6 +555,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 <table className="w-full text-left">
                   <thead className="bg-stone-50 border-bottom border-stone-200">
                     <tr>
+                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Код</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Товар</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Ціна</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Перегляди</th>
@@ -556,6 +565,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <tbody className="divide-y divide-stone-100">
                     {products.map((product) => (
                       <tr key={product.id} className="hover:bg-stone-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <span className="font-mono text-xs bg-stone-100 px-2 py-1 rounded text-stone-600">{product.sku}</span>
+                        </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <img 
@@ -577,7 +589,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                   name: product.name,
                                   description: product.description,
                                   price: product.price.toString(),
-                                  images: product.images
+                                  images: product.images,
+                                  sku: product.sku
                                 });
                                 setIsAdding(true);
                               }}
@@ -769,16 +782,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
+              className="relative bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh]"
             >
-              <div className="p-6 border-b border-stone-100 flex justify-between items-center">
-                <h3 className="text-xl font-bold">Додати оголошення</h3>
-                <button onClick={() => setIsAddingAd(false)} className="text-stone-400 hover:text-stone-900">
+              <div className="p-4 sm:p-6 border-b border-stone-100 flex justify-between items-center">
+                <h3 className="text-lg sm:text-xl font-bold">Додати оголошення</h3>
+                <button onClick={() => setIsAddingAd(false)} className="text-stone-400 hover:text-stone-900 p-1">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleAdSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <form onSubmit={handleAdSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-stone-700">Заголовок</label>
                     <input 
@@ -844,7 +857,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     accept="image/*"
                     className="hidden"
                   />
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {adFormData.images.map((url, idx) => (
                       <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
                         <img src={url} className="w-full h-full object-cover" alt="" />
@@ -896,16 +909,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
+              className="relative bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh]"
             >
-              <div className="p-6 border-b border-stone-100 flex justify-between items-center">
-                <h3 className="text-xl font-bold">{editingProduct ? 'Редагувати товар' : 'Додати новий товар'}</h3>
-                <button onClick={() => setIsAdding(false)} className="text-stone-400 hover:text-stone-900">
+              <div className="p-4 sm:p-6 border-b border-stone-100 flex justify-between items-center">
+                <h3 className="text-lg sm:text-xl font-bold">{editingProduct ? 'Редагувати товар' : 'Додати новий товар'}</h3>
+                <button onClick={() => setIsAdding(false)} className="text-stone-400 hover:text-stone-900 p-1">
                   <X size={24} />
                 </button>
               </div>
-              <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-stone-700">Назва товару</label>
                     <input 
@@ -931,6 +944,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
 
                 <div className="space-y-2">
+                  <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
+                  <input 
+                    type="text"
+                    value={formData.sku}
+                    onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
+                    className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none font-mono"
+                    placeholder="Автоматично (напр. AT-X123)"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <label className="text-sm font-medium text-stone-700">Опис</label>
                     <button 
@@ -940,16 +964,24 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         if (!formData.name) return alert('Спочатку введіть назву товару');
                         setIsGenerating(true);
                         try {
-                          const res = await fetch('/api/generate-description', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ name: formData.name })
+                          const apiKey = process.env.GEMINI_API_KEY;
+                          if (!apiKey) {
+                            throw new Error('API ключ не знайдено. Будь ласка, перевірте налаштування Secrets.');
+                          }
+
+                          const ai = new GoogleGenAI({ apiKey });
+                          const response = await ai.models.generateContent({
+                            model: "gemini-3-flash-preview",
+                            contents: `Напиши короткий, привабливий опис для товару "${formData.name}" для магазину автомобільних дисків. Використовуй українську мову. Опис має бути професійним та технічно грамотним.`,
                           });
-                          if (!res.ok) throw new Error('Помилка сервера');
-                          const data = await res.json();
-                          if (data.error) throw new Error(data.error);
-                          setFormData({ ...formData, description: data.description });
+
+                          if (!response.text) {
+                            throw new Error('ШІ повернув порожню відповідь.');
+                          }
+
+                          setFormData({ ...formData, description: response.text });
                         } catch (err: any) {
+                          console.error('AI Generation Error:', err);
                           alert('Не вдалося згенерувати опис: ' + err.message);
                         } finally {
                           setIsGenerating(false);
@@ -1001,7 +1033,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       Додати
                     </button>
                   </div>
-                  <div className="grid grid-cols-5 gap-2">
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {formData.images.map((url, idx) => (
                       <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
                         <img src={url} className="w-full h-full object-cover" alt="" />

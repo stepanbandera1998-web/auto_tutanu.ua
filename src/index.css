@@ -9,6 +9,12 @@
   body {
     @apply bg-stone-50 text-stone-900 antialiased;
   }
+  img {
+    -webkit-user-drag: none;
+    user-drag: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
 .glass {

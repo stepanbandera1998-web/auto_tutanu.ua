@@ -17,6 +17,7 @@ db.exec(`
     description TEXT,
     price REAL NOT NULL,
     images TEXT, -- JSON array of URLs/base64
+    sku TEXT,
     views INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -48,7 +49,47 @@ db.exec(`
   );
 `);
 
+// Migration: Add sku column if it doesn't exist
+try {
+  db.prepare("SELECT sku FROM products LIMIT 1").get();
+} catch (e) {
+  console.log("Adding sku column to products table...");
+  db.exec("ALTER TABLE products ADD COLUMN sku TEXT");
+}
+
 // Seed data if empty
+const productsCount = db.prepare("SELECT COUNT(*) as count FROM products").get().count;
+if (productsCount === 0) {
+  const insertProduct = db.prepare("INSERT INTO products (name, description, price, images, sku) VALUES (?, ?, ?, ?, ?)");
+  const seedProducts = [
+    {
+      name: "Vossen CVT Gloss Graphite",
+      description: "Елегантні диски з направленим дизайном. Ідеально підходять для сучасних седанів.",
+      price: 12500,
+      images: ["https://images.unsplash.com/photo-1551522435-a13afa10f103?auto=format&fit=crop&q=80&w=800"],
+      sku: "VS-CVT-01"
+    },
+    {
+      name: "BBS Super RS Gold",
+      description: "Класика, яка ніколи не вийде з моди. Трьохскладовий дизайн з золотистим центром.",
+      price: 18900,
+      images: ["https://images.unsplash.com/photo-1584345604480-8347bb9c56a0?auto=format&fit=crop&q=80&w=800"],
+      sku: "BBS-RS-02"
+    },
+    {
+      name: "Rotiform BLQ-C",
+      description: "Унікальний сітчастий дизайн для тих, хто хоче виділятися.",
+      price: 14200,
+      images: ["https://images.unsplash.com/photo-1549399500-c44d172e9971?auto=format&fit=crop&q=80&w=800"],
+      sku: "RT-BLQ-03"
+    }
+  ];
+
+  for (const p of seedProducts) {
+    insertProduct.run(p.name, p.description, p.price, JSON.stringify(p.images), p.sku);
+  }
+}
+
 const reviewsCount = db.prepare("SELECT COUNT(*) as count FROM reviews").get().count;
 if (reviewsCount === 0) {
   const names = [
@@ -156,18 +197,18 @@ async function startServer() {
   });
 
   app.post("/api/products", (req, res) => {
-    const { name, description, price, images } = req.body;
+    const { name, description, price, images, sku } = req.body;
     const result = db.prepare(
-      "INSERT INTO products (name, description, price, images) VALUES (?, ?, ?, ?)"
-    ).run(name, description, price, JSON.stringify(images));
+      "INSERT INTO products (name, description, price, images, sku) VALUES (?, ?, ?, ?, ?)"
+    ).run(name, description, price, JSON.stringify(images), sku || `AT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`);
     res.json({ id: result.lastInsertRowid });
   });
 
   app.put("/api/products/:id", (req, res) => {
-    const { name, description, price, images } = req.body;
+    const { name, description, price, images, sku } = req.body;
     db.prepare(
-      "UPDATE products SET name = ?, description = ?, price = ?, images = ? WHERE id = ?"
-    ).run(name, description, price, JSON.stringify(images), req.params.id);
+      "UPDATE products SET name = ?, description = ?, price = ?, images = ?, sku = ? WHERE id = ?"
+    ).run(name, description, price, JSON.stringify(images), sku, req.params.id);
     res.json({ success: true });
   });
 
@@ -240,21 +281,6 @@ async function startServer() {
   app.delete("/api/ads/:id", (req, res) => {
     db.prepare("DELETE FROM ads WHERE id = ?").run(req.params.id);
     res.json({ success: true });
-  });
-
-  app.post("/api/generate-description", async (req, res) => {
-    try {
-      const { name } = req.body;
-      if (!name) return res.status(400).json({ error: "Name is required" });
-      
-      const { generateProductDescription } = await import("./src/services/geminiService.ts");
-      const description = await generateProductDescription(name);
-      
-      res.json({ description });
-    } catch (error: any) {
-      console.error("Route error:", error);
-      res.status(500).json({ error: error.message || "Помилка при генерації опису" });
-    }
   });
 
   // Vite middleware

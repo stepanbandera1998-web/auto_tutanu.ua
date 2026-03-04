@@ -4,6 +4,7 @@ export interface Product {
   description: string;
   price: number;
   images: string[];
+  sku: string;
   views: number;
   created_at: string;
 }

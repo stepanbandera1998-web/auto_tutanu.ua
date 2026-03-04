@@ -13,7 +13,10 @@ import {
   Star,
   Plus,
   Megaphone,
-  ExternalLink
+  ExternalLink,
+  ShieldCheck,
+  Send,
+  Facebook
 } from 'lucide-react';
 import { WheelLogo } from './components/WheelLogo';
 import { MultiSpokeLogo } from './components/MultiSpokeLogo';
@@ -27,7 +30,10 @@ import { supabase } from './services/supabase';
 
 const PHONE_NUMBER = "0993177673";
 const WHATSAPP_LINK = `https://wa.me/380993177673`;
+const TELEGRAM_LINK = "https://t.me/auto_tutanu_ua";
 const INSTAGRAM_LINK = "https://www.instagram.com/auto_tutanu.ua";
+const TIKTOK_LINK = "https://www.tiktok.com/@auto_tutanu.ua";
+const FACEBOOK_LINK = "https://www.facebook.com/profile.php?id=100041438364922";
 
 type Tab = 'catalog' | 'reviews' | 'ads';
 
@@ -76,8 +82,19 @@ export default function App() {
     fetchProducts();
     fetchReviews();
     fetchAds();
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).tagName === 'IMG') {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('contextmenu', handleContextMenu);
+
     const socket = io();
-    return () => { socket.disconnect(); };
+    return () => { 
+      socket.disconnect(); 
+      document.removeEventListener('contextmenu', handleContextMenu);
+    };
   }, []);
 
   const fetchProducts = async () => {
@@ -285,7 +302,7 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'admin123') { // Simple password for demo
+    if (password === 's123321s') { // Simple password for demo
       setIsAdmin(true);
       setShowAdminLogin(false);
     } else {
@@ -295,7 +312,8 @@ export default function App() {
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.description.toLowerCase().includes(searchQuery.toLowerCase())
+    p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   if (isAdmin) {
@@ -331,6 +349,8 @@ export default function App() {
                 Оголошення
               </button>
               <a href={INSTAGRAM_LINK} target="_blank" className="hover:text-stone-900 transition-colors">Instagram</a>
+              <a href={TIKTOK_LINK} target="_blank" className="hover:text-stone-900 transition-colors">TikTok</a>
+              <a href={FACEBOOK_LINK} target="_blank" className="hover:text-stone-900 transition-colors">Facebook</a>
             </div>
           </div>
 
@@ -359,8 +379,9 @@ export default function App() {
             <button 
               onClick={() => setShowAdminLogin(true)}
               className="p-2 text-stone-500 hover:text-stone-900 transition-colors"
+              title="Адмін-панель"
             >
-              <Instagram size={20} />
+              <ShieldCheck size={20} />
             </button>
             <button className="md:hidden p-2" onClick={() => setIsMenuOpen(!isMenuOpen)}>
               <Menu size={24} />
@@ -382,6 +403,8 @@ export default function App() {
                 <button onClick={() => { setActiveTab('reviews'); setIsMenuOpen(false); }} className="text-left font-medium">Відгуки</button>
                 <button onClick={() => { setActiveTab('ads'); setIsMenuOpen(false); }} className="text-left font-medium">Оголошення</button>
                 <a href={INSTAGRAM_LINK} target="_blank" className="font-medium">Instagram</a>
+                <a href={TIKTOK_LINK} target="_blank" className="font-medium">TikTok</a>
+                <a href={FACEBOOK_LINK} target="_blank" className="font-medium">Facebook</a>
               </div>
             </motion.div>
           )}
@@ -474,7 +497,10 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                  <h4 className="font-bold text-lg mb-1 group-hover:text-stone-600 transition-colors">{product.name}</h4>
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
+                    <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
+                  </div>
                   <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
                 </motion.div>
               ))}
@@ -758,10 +784,11 @@ export default function App() {
                   <MessageCircle size={24} /> Зв'язатись у WhatsApp
                 </a>
                 <a 
-                  href={`tel:${PHONE_NUMBER}`}
-                  className="w-full flex items-center justify-center gap-3 bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 transition-all"
+                  href={TELEGRAM_LINK}
+                  target="_blank"
+                  className="w-full flex items-center justify-center gap-3 bg-[#229ED9] text-white py-4 rounded-2xl font-bold hover:bg-[#1d89bc] transition-all"
                 >
-                  <Phone size={24} /> Зателефонувати нам
+                  <Send size={24} /> Зв'язатись у Telegram
                 </a>
               </div>
             </motion.div>
@@ -906,7 +933,10 @@ export default function App() {
                 </button>
                 
                 <div className="mb-8">
-                  <h3 className="text-3xl font-bold mb-2">{selectedProduct.name}</h3>
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-3xl font-bold">{selectedProduct.name}</h3>
+                    <span className="text-xs font-mono bg-stone-100 px-3 py-1 rounded-full text-stone-500 uppercase tracking-wider">Код: {selectedProduct.sku}</span>
+                  </div>
                   <p className="text-2xl font-mono text-stone-900">{selectedProduct.price} грн</p>
                 </div>
 
@@ -920,26 +950,63 @@ export default function App() {
                   <h4 className="font-bold text-sm uppercase tracking-widest text-stone-400">Зв'язатись з нами</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <a 
+                      href={TELEGRAM_LINK}
+                      target="_blank"
+                      className="flex items-center justify-center gap-3 bg-[#229ED9] text-white py-4 rounded-2xl font-bold hover:bg-[#1d89bc] transition-all"
+                    >
+                      <Send size={20} /> Telegram
+                    </a>
+                    <a 
                       href={WHATSAPP_LINK}
                       target="_blank"
                       className="flex items-center justify-center gap-3 bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all"
                     >
                       <MessageCircle size={20} /> WhatsApp
                     </a>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <a 
                       href={`tel:${PHONE_NUMBER}`}
                       className="flex items-center justify-center gap-3 bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 transition-all"
                     >
                       <Phone size={20} /> Зателефонувати
                     </a>
+                    <a 
+                      href={INSTAGRAM_LINK}
+                      target="_blank"
+                      className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
+                    >
+                      <Instagram size={20} /> Instagram
+                    </a>
                   </div>
-                  <a 
-                    href={INSTAGRAM_LINK}
-                    target="_blank"
-                    className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
-                  >
-                    <Instagram size={20} /> Наш Instagram
-                  </a>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <a 
+                      href={FACEBOOK_LINK}
+                      target="_blank"
+                      className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
+                    >
+                      <Facebook size={20} /> Facebook
+                    </a>
+                    <a 
+                      href={TIKTOK_LINK}
+                      target="_blank"
+                      className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
+                    >
+                      <svg 
+                        viewBox="0 0 24 24" 
+                        width="20" 
+                        height="20" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        fill="none" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                      >
+                        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+                      </svg>
+                      TikTok
+                    </a>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -991,10 +1058,27 @@ export default function App() {
           <div className="flex items-center gap-4">
             <WheelLogo className="animate-spin-slow cursor-pointer" size={80} />
             <div>
-              <p className="text-stone-500 text-sm">© 2024 Всі права захищені.</p>
+              <p className="text-stone-500 text-sm">© 2019 - {new Date().getFullYear()} Всі права захищені.</p>
             </div>
           </div>
           <div className="flex gap-6">
+            <a href={FACEBOOK_LINK} target="_blank" className="text-stone-400 hover:text-stone-900 transition-colors">
+              <Facebook size={24} />
+            </a>
+            <a href={TIKTOK_LINK} target="_blank" className="text-stone-400 hover:text-stone-900 transition-colors flex items-center">
+              <svg 
+                viewBox="0 0 24 24" 
+                width="24" 
+                height="24" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                fill="none" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+              </svg>
+            </a>
             <a href={INSTAGRAM_LINK} target="_blank" className="text-stone-400 hover:text-stone-900 transition-colors">
               <Instagram size={24} />
             </a>
