@@ -158,15 +158,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const price = parseFloat(formData.price);
+      if (!formData.name.trim()) throw new Error('Назва товару обов\'язкова');
+      const price = parseFloat(formData.price.replace(',', '.'));
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
       let success = false;
       const productData = {
         ...formData,
+        name: formData.name.trim(),
         price,
         sku: formData.sku || `AT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`
       };
+
+      console.log('Submitting product data:', productData);
 
       try {
         if (!supabase) throw new Error('Supabase not configured');
@@ -193,7 +197,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(productData)
         });
-        if (res.ok) success = true;
+        if (res.ok) {
+          success = true;
+        } else {
+          const errorData = await res.json().catch(() => ({ error: 'Unknown server error' }));
+          throw new Error(errorData.error || 'Не вдалося зберегти товар на сервері');
+        }
       }
 
       if (success) {
@@ -429,6 +438,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'product' | 'ad') => {
     const file = e.target.files?.[0];
     if (file) {
+      // Limit to 5MB per image
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Файл занадто великий. Максимальний розмір - 5МБ');
+        if (e.target) e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;

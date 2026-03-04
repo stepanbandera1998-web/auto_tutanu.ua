@@ -162,7 +162,7 @@ async function startServer() {
     cors: { origin: "*" }
   });
 
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: '100mb' }));
 
   // Real-time presence
   let onlineUsers = 0;
@@ -197,19 +197,44 @@ async function startServer() {
   });
 
   app.post("/api/products", (req, res) => {
-    const { name, description, price, images, sku } = req.body;
-    const result = db.prepare(
-      "INSERT INTO products (name, description, price, images, sku) VALUES (?, ?, ?, ?, ?)"
-    ).run(name, description, price, JSON.stringify(images), sku || `AT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`);
-    res.json({ id: result.lastInsertRowid });
+    try {
+      console.log("Incoming product data:", req.body);
+      const { name, description, price, images, sku } = req.body;
+      if (!name || price === undefined) {
+        return res.status(400).json({ error: "Name and price are required" });
+      }
+      
+      const imagesJson = Array.isArray(images) ? JSON.stringify(images) : JSON.stringify([]);
+      
+      const stmt = db.prepare(
+        "INSERT INTO products (name, description, price, images, sku) VALUES (?, ?, ?, ?, ?)"
+      );
+      const result = stmt.run(name, description, price, imagesJson, sku || `AT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`);
+      res.json({ id: result.lastInsertRowid });
+    } catch (error: any) {
+      console.error("Error creating product:", error);
+      res.status(500).json({ error: error.message || "Internal server error" });
+    }
   });
 
   app.put("/api/products/:id", (req, res) => {
-    const { name, description, price, images, sku } = req.body;
-    db.prepare(
-      "UPDATE products SET name = ?, description = ?, price = ?, images = ?, sku = ? WHERE id = ?"
-    ).run(name, description, price, JSON.stringify(images), sku, req.params.id);
-    res.json({ success: true });
+    try {
+      const { name, description, price, images, sku } = req.body;
+      if (!name || price === undefined) {
+        return res.status(400).json({ error: "Name and price are required" });
+      }
+      
+      const imagesJson = Array.isArray(images) ? JSON.stringify(images) : JSON.stringify([]);
+      
+      const stmt = db.prepare(
+        "UPDATE products SET name = ?, description = ?, price = ?, images = ?, sku = ? WHERE id = ?"
+      );
+      stmt.run(name, description, price, imagesJson, sku, req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error updating product:", error);
+      res.status(500).json({ error: error.message || "Internal server error" });
+    }
   });
 
   app.delete("/api/products/:id", (req, res) => {
