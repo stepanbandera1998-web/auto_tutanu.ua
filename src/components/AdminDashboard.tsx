@@ -55,47 +55,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   const fetchReviews = async () => {
-    let allReviews: any[] = [];
-    let supabaseSuccess = false;
-
     try {
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('reviews')
-          .select('*')
-          .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        if (data) {
-          allReviews = [...data];
-          supabaseSuccess = true;
-        }
-      }
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setReviews(data || []);
     } catch (error) {
-      console.error('Error fetching reviews from Supabase:', error);
+      console.error('Error fetching reviews:', error);
+      setReviews([]);
     }
-
-    try {
-      const res = await fetch('/api/reviews');
-      if (res.ok) {
-        const localData = await res.json();
-        if (Array.isArray(localData)) {
-          // Merge and remove duplicates by some criteria or just append if they are different
-          // Since IDs might overlap, we can't easily merge by ID.
-          // Let's just use local if Supabase failed or is empty
-          if (!supabaseSuccess || allReviews.length === 0) {
-            allReviews = localData;
-          } else {
-            // If both have data, we might want to show both, but it's tricky with IDs.
-            // For now, let's just prioritize Supabase if it has data.
-          }
-        }
-      }
-    } catch (localError) {
-      console.error('Local API also failed for reviews:', localError);
-    }
-
-    setReviews(allReviews);
   };
 
   const fetchProducts = async () => {
@@ -109,15 +81,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (error) throw error;
       setProducts(data || []);
     } catch (error) {
-      console.error('Error fetching products from Supabase (using fallback):', error);
-      try {
-        const res = await fetch('/api/products');
-        const data = await res.json();
-        setProducts(data || []);
-      } catch (localError) {
-        console.error('Local API also failed for products:', localError);
-        setProducts([]);
-      }
+      console.error('Error fetching products:', error);
+      setProducts([]);
     }
   };
 
@@ -132,22 +97,55 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (error) throw error;
       setAds(data || []);
     } catch (error) {
-      console.error('Error fetching ads from Supabase (using fallback):', error);
-      try {
-        const res = await fetch('/api/ads');
-        const data = await res.json();
-        setAds(data || []);
-      } catch (localError) {
-        console.error('Local API also failed:', localError);
-        setAds([]);
-      }
+      console.error('Error fetching ads:', error);
+      setAds([]);
     }
   };
 
   const fetchStats = async () => {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
-    setStats(data);
+    try {
+      if (!supabase) throw new Error('Supabase not configured');
+      
+      // Fetch products for views and most viewed
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, views')
+        .order('views', { ascending: false });
+      
+      if (productsError) throw productsError;
+      
+      // Fetch total visits from stats table
+      const { count: visitsCount, error: visitsError } = await supabase
+        .from('stats')
+        .select('*', { count: 'exact', head: true })
+        .eq('type', 'visit');
+      
+      if (visitsError) throw visitsError;
+
+      const totalViews = productsData?.reduce((acc, p) => acc + (p.views || 0), 0) || 0;
+      const mostViewed = (productsData || []).slice(0, 5);
+        
+      // For online users, we still use the server socket
+      const res = await fetch('/api/stats');
+      const serverData = await res.json();
+      
+      setStats({
+        totalVisits: visitsCount || 0,
+        totalViews: totalViews,
+        mostViewed: mostViewed,
+        onlineUsers: serverData.onlineUsers
+      });
+    } catch (error) {
+      console.error('Error fetching stats from Supabase:', error);
+      // Fallback to server stats if Supabase fails
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        setStats(data);
+      } catch (e) {
+        console.error('Full stats failure:', e);
+      }
+    }
   };
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -187,37 +185,21 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             .insert([productData]);
           if (error) throw error;
         }
-        success = true;
-      } catch (error) {
-        console.error('Error submitting product to Supabase (using fallback):', error);
-        const method = editingProduct ? 'PUT' : 'POST';
-        const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
-        const res = await fetch(url, {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(productData)
-        });
-        if (res.ok) {
-          success = true;
-        } else {
-          const errorData = await res.json().catch(() => ({ error: 'Unknown server error' }));
-          throw new Error(errorData.error || 'Не вдалося зберегти товар на сервері');
-        }
-      }
-
-      if (success) {
+        
         alert(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
         setFormData({ name: '', description: '', price: '', images: [], sku: '' });
         fetchProducts();
-      } else {
-        throw new Error('Не вдалося зберегти товар');
+      } catch (error: any) {
+        console.error('Error submitting product:', error);
+        alert('Помилка: ' + error.message);
+      } finally {
+        setIsSubmitting(false);
       }
     } catch (error: any) {
-      console.error('Error submitting product:', error);
+      console.error('Error in handleSubmit:', error);
       alert('Помилка: ' + error.message);
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -226,42 +208,23 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const price = parseFloat(adFormData.price);
+      const price = parseFloat(adFormData.price.replace(',', '.'));
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
-      let success = false;
-      try {
-        if (!supabase) throw new Error('Supabase not configured');
-        const { error } = await supabase
-          .from('ads')
-          .insert([{
-            ...adFormData,
-            price,
-          }]);
-        
-        if (error) throw error;
-        success = true;
-      } catch (error) {
-        console.error('Error adding ad to Supabase (using fallback):', error);
-        // Fallback to local API
-        const res = await fetch('/api/ads', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...adFormData,
-            price,
-          })
-        });
-        if (!res.ok) throw new Error('Локальна помилка при збереженні оголошення');
-        success = true;
-      }
-
-      if (success) {
-        alert('Оголошення опубліковано!');
-        setIsAddingAd(false);
-        setAdFormData({ title: '', description: '', price: '', phone: '', images: [], is_placeholder: false });
-        fetchAds();
-      }
+      if (!supabase) throw new Error('Supabase not configured');
+      const { error } = await supabase
+        .from('ads')
+        .insert([{
+          ...adFormData,
+          price,
+        }]);
+      
+      if (error) throw error;
+      
+      alert('Оголошення опубліковано!');
+      setIsAddingAd(false);
+      setAdFormData({ title: '', description: '', price: '', phone: '', images: [], is_placeholder: false });
+      fetchAds();
     } catch (error: any) {
       console.error('Error submitting ad:', error);
       alert('Помилка: ' + error.message);
@@ -273,23 +236,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleDelete = async (id: number) => {
     if (confirm('Ви впевнені?')) {
       try {
-        let success = false;
-        try {
-          if (!supabase) throw new Error('Supabase not configured');
-          const { error } = await supabase
-            .from('products')
-            .delete()
-            .eq('id', id);
-          if (error) throw error;
-          success = true;
-        } catch (error) {
-          console.error('Error deleting product from Supabase (using fallback):', error);
-          const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-          if (res.ok) success = true;
-        }
-        if (success) fetchProducts();
-      } catch (error) {
-        console.error('Error in handleDelete:', error);
+        if (!supabase) throw new Error('Supabase not configured');
+        const { error } = await supabase
+          .from('products')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        fetchProducts();
+      } catch (error: any) {
+        console.error('Error deleting product:', error);
+        alert('Помилка при видаленні: ' + error.message);
       }
     }
   };
@@ -297,23 +253,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleDeleteAd = async (id: number) => {
     if (confirm('Ви впевнені?')) {
       try {
-        let success = false;
-        try {
-          if (!supabase) throw new Error('Supabase not configured');
-          const { error } = await supabase
-            .from('ads')
-            .delete()
-            .eq('id', id);
-          if (error) throw error;
-          success = true;
-        } catch (error) {
-          console.error('Error deleting ad from Supabase (using fallback):', error);
-          const res = await fetch(`/api/ads/${id}`, { method: 'DELETE' });
-          if (res.ok) success = true;
-        }
-        if (success) fetchAds();
-      } catch (error) {
-        console.error('Error in handleDeleteAd:', error);
+        if (!supabase) throw new Error('Supabase not configured');
+        const { error } = await supabase
+          .from('ads')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        fetchAds();
+      } catch (error: any) {
+        console.error('Error deleting ad:', error);
+        alert('Помилка при видаленні: ' + error.message);
       }
     }
   };
@@ -321,23 +270,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleDeleteReview = async (id: number) => {
     if (confirm('Ви впевнені, що хочете видалити цей відгук?')) {
       try {
-        let success = false;
-        try {
-          if (!supabase) throw new Error('Supabase not configured');
-          const { error } = await supabase
-            .from('reviews')
-            .delete()
-            .eq('id', id);
-          if (error) throw error;
-          success = true;
-        } catch (error) {
-          console.error('Error deleting review from Supabase (using fallback):', error);
-          const res = await fetch(`/api/reviews/${id}`, { method: 'DELETE' });
-          if (res.ok) success = true;
-        }
-        if (success) fetchReviews();
-      } catch (error) {
-        console.error('Error in handleDeleteReview:', error);
+        if (!supabase) throw new Error('Supabase not configured');
+        const { error } = await supabase
+          .from('reviews')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        fetchReviews();
+      } catch (error: any) {
+        console.error('Error deleting review:', error);
+        alert('Помилка при видаленні: ' + error.message);
       }
     }
   };
@@ -390,27 +332,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         });
       }
 
-      let success = false;
       if (supabase) {
-        try {
-          const { error } = await supabase.from('reviews').insert(newReviews);
-          if (error) throw error;
-          success = true;
-          console.log('Successfully seeded reviews to Supabase');
-        } catch (supabaseError) {
-          console.error('Supabase seeding failed, falling back to local API:', supabaseError);
-        }
-      }
-
-      if (!success) {
-        const res = await fetch('/api/reviews/bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newReviews)
-        });
-        if (!res.ok) throw new Error('Помилка при збереженні в локальну базу');
-        success = true;
-        console.log('Successfully seeded reviews to local API');
+        const { error } = await supabase.from('reviews').insert(newReviews);
+        if (error) throw error;
+        console.log('Successfully seeded reviews to Supabase');
+      } else {
+        throw new Error('Supabase not configured');
       }
       
       alert('50 відгуків успішно згенеровано!');

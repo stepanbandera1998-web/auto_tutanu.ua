@@ -83,6 +83,13 @@ export default function App() {
     fetchReviews();
     fetchAds();
 
+    // Log visit to Supabase
+    if (supabase) {
+      supabase.from('stats').insert([{ type: 'visit' }]).then(({ error }) => {
+        if (error) console.error('Error logging visit:', error);
+      });
+    }
+
     const handleContextMenu = (e: MouseEvent) => {
       if ((e.target as HTMLElement).tagName === 'IMG') {
         e.preventDefault();
@@ -106,59 +113,27 @@ export default function App() {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      console.log('Successfully fetched products from Supabase');
       setProducts(data || []);
     } catch (error) {
-      console.error('Error fetching products from Supabase (using fallback):', error);
-      try {
-        const res = await fetch('/api/products');
-        const data = await res.json();
-        setProducts(data || []);
-      } catch (localError) {
-        console.error('Local API also failed for products:', localError);
-        setProducts([]);
-      }
+      console.error('Error fetching products:', error);
+      setProducts([]);
     }
   };
 
   const fetchReviews = async () => {
-    let allReviews: any[] = [];
-    let supabaseSuccess = false;
-
     try {
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('reviews')
-          .select('*')
-          .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        if (data && data.length > 0) {
-          allReviews = [...data];
-          supabaseSuccess = true;
-          console.log('Successfully fetched reviews from Supabase');
-        }
-      }
+      if (!supabase) throw new Error('Supabase not configured');
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setReviews(data || []);
     } catch (error) {
-      console.error('Error fetching reviews from Supabase:', error);
+      console.error('Error fetching reviews:', error);
+      setReviews([]);
     }
-
-    try {
-      const res = await fetch('/api/reviews');
-      if (res.ok) {
-        const localData = await res.json();
-        if (Array.isArray(localData) && localData.length > 0) {
-          if (!supabaseSuccess || allReviews.length === 0) {
-            allReviews = localData;
-            console.log('Using reviews from local API');
-          }
-        }
-      }
-    } catch (localError) {
-      console.error('Local API also failed for reviews:', localError);
-    }
-
-    setReviews(allReviews);
   };
 
   const fetchAds = async () => {
@@ -170,55 +145,48 @@ export default function App() {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      console.log('Successfully fetched ads from Supabase');
-      setAds(data || []);
-    } catch (error) {
-      console.error('Error fetching ads from Supabase (using fallback):', error);
-      try {
-        const res = await fetch('/api/ads');
-        const data = await res.json();
-        if (data && data.length > 0) {
-          setAds(data);
-        } else {
-          // Add default placeholders if no ads found anywhere
-          const placeholders: Ad[] = [
-            {
-              id: -1,
-              title: 'BMW M-Parallel Style 37',
-              description: 'Оригінальні диски в ідеальному стані. Параметри: R18, 8J/9.5J.',
-              price: 25000,
-              phone: '099XXXXXXX',
-              images: ['https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=800'],
-              is_placeholder: true,
-              created_at: new Date().toISOString()
-            },
-            {
-              id: -2,
-              title: 'BBS RS 3-piece forged',
-              description: 'Класика, яка ніколи не вийде з моди. Повна реставрація.',
-              price: 45000,
-              phone: '099XXXXXXX',
-              images: ['https://images.unsplash.com/photo-1580273916550-e323be2ae537?auto=format&fit=crop&q=80&w=800'],
-              is_placeholder: true,
-              created_at: new Date().toISOString()
-            },
-            {
-              id: -3,
-              title: 'Vossen CVT Gloss Silver',
-              description: 'Сучасний дизайн для вашого авто. Стан нових.',
-              price: 18000,
-              phone: '099XXXXXXX',
-              images: ['https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&q=80&w=800'],
-              is_placeholder: true,
-              created_at: new Date().toISOString()
-            }
-          ];
-          setAds(placeholders);
-        }
-      } catch (localError) {
-        console.error('Local API also failed:', localError);
-        setAds([]);
+      
+      if (data && data.length > 0) {
+        setAds(data);
+      } else {
+        // Add default placeholders if no ads found
+        const placeholders: Ad[] = [
+          {
+            id: -1,
+            title: 'BMW M-Parallel Style 37',
+            description: 'Оригінальні диски в ідеальному стані. Параметри: R18, 8J/9.5J.',
+            price: 25000,
+            phone: '099XXXXXXX',
+            images: ['https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=800'],
+            is_placeholder: true,
+            created_at: new Date().toISOString()
+          },
+          {
+            id: -2,
+            title: 'BBS RS 3-piece forged',
+            description: 'Класика, яка ніколи не вийде з моди. Повна реставрація.',
+            price: 45000,
+            phone: '099XXXXXXX',
+            images: ['https://images.unsplash.com/photo-1580273916550-e323be2ae537?auto=format&fit=crop&q=80&w=800'],
+            is_placeholder: true,
+            created_at: new Date().toISOString()
+          },
+          {
+            id: -3,
+            title: 'Vossen CVT Gloss Silver',
+            description: 'Сучасний дизайн для вашого авто. Стан нових.',
+            price: 18000,
+            phone: '099XXXXXXX',
+            images: ['https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&q=80&w=800'],
+            is_placeholder: true,
+            created_at: new Date().toISOString()
+          }
+        ];
+        setAds(placeholders);
       }
+    } catch (error) {
+      console.error('Error fetching ads:', error);
+      setAds([]);
     }
   };
 
@@ -228,73 +196,21 @@ export default function App() {
     e.preventDefault();
     setIsSubmittingReview(true);
     try {
-      let success = false;
-      let errorMessage = '';
-
-      // Try Supabase first
-      if (supabase) {
-        try {
-          const { error } = await supabase
-            .from('reviews')
-            .insert([newReview]);
-          
-          if (error) throw error;
-          success = true;
-          console.log('Review successfully added to Supabase');
-        } catch (error: any) {
-          console.error('Error adding review to Supabase:', error);
-          errorMessage = `Supabase Error: ${error.message || JSON.stringify(error)}`;
-          
-          // Fallback to local API if Supabase fails
-          try {
-            const res = await fetch('/api/reviews', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newReview)
-            });
-            if (res.ok) {
-              success = true;
-              console.log('Review successfully added to local API (fallback)');
-            } else {
-              const errorData = await res.json();
-              errorMessage += ` | Local API Error: ${errorData.error || 'Unknown'}`;
-            }
-          } catch (localError: any) {
-            console.error('Local API also failed:', localError);
-            errorMessage += ` | Local API Exception: ${localError.message}`;
-          }
-        }
-      } else {
-        // No Supabase, use local API directly
-        try {
-          const res = await fetch('/api/reviews', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newReview)
-          });
-          if (res.ok) {
-            success = true;
-          } else {
-            const errorData = await res.json();
-            errorMessage = errorData.error || 'Помилка локального сервера';
-          }
-        } catch (localError: any) {
-          console.error('Local API failed:', localError);
-          errorMessage = localError.message;
-        }
-      }
-
-      if (success) {
-        alert('Дякуємо! Ваш відгук опубліковано.');
-        fetchReviews();
-        setShowReviewForm(false);
-        setNewReview({ user_name: '', rating: 5, comment: '' });
-      } else {
-        alert('Не вдалося опублікувати відгук:\n' + errorMessage);
-      }
+      if (!supabase) throw new Error('Supabase not configured');
+      
+      const { error } = await supabase
+        .from('reviews')
+        .insert([newReview]);
+      
+      if (error) throw error;
+      
+      alert('Дякуємо! Ваш відгук опубліковано.');
+      fetchReviews();
+      setShowReviewForm(false);
+      setNewReview({ user_name: '', rating: 5, comment: '' });
     } catch (error: any) {
-      console.error('Error in handleAddReview:', error);
-      alert('Виникла непередбачувана помилка');
+      console.error('Error adding review:', error);
+      alert('Помилка при додаванні відгуку: ' + (error.message || 'Невідома помилка'));
     } finally {
       setIsSubmittingReview(false);
     }
@@ -478,10 +394,20 @@ export default function App() {
                 <motion.div 
                   key={product.id}
                   layoutId={`product-${product.id}`}
-                  onClick={() => {
+                  onClick={async () => {
                     setSelectedProduct(product);
                     setCurrentImageIndex(0);
-                    fetch(`/api/products/${product.id}`); // Log view
+                    // Update views in Supabase
+                    if (supabase) {
+                      try {
+                        await supabase
+                          .from('products')
+                          .update({ views: (product.views || 0) + 1 })
+                          .eq('id', product.id);
+                      } catch (err) {
+                        console.error('Error updating views:', err);
+                      }
+                    }
                   }}
                   className="group cursor-pointer"
                 >
