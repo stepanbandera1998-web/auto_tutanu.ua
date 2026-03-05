@@ -5,6 +5,8 @@ export interface Product {
   price: number;
   images: string[];
   sku: string;
+  is_sale?: boolean;
+  old_price?: number;
   views: number;
   created_at: string;
 }

@@ -34,7 +34,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     description: '',
     price: '',
     images: [] as string[],
-    sku: ''
+    sku: '',
+    is_sale: false,
+    old_price: ''
   });
   const [adFormData, setAdFormData] = useState({
     title: '',
@@ -161,35 +163,62 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
       let success = false;
-      const productData = {
-        ...formData,
+      // Generate 3-digit numeric SKU if not provided
+      let sku = formData.sku;
+      if (!sku) {
+        const numericSkus = products
+          .map(p => parseInt(p.sku))
+          .filter(n => !isNaN(n));
+        const nextSku = numericSkus.length > 0 ? Math.max(...numericSkus) + 1 : 1;
+        sku = nextSku.toString().padStart(3, '0');
+      }
+
+      const productData: any = {
         name: formData.name.trim(),
+        description: formData.description,
         price,
-        sku: formData.sku || `AT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`
+        images: formData.images,
+        sku
       };
+
+      // Only include sale fields if they are actually used to avoid errors if columns don't exist yet
+      if (formData.is_sale) {
+        productData.is_sale = true;
+        if (formData.old_price) {
+          productData.old_price = parseFloat(formData.old_price.replace(',', '.'));
+        }
+      }
 
       console.log('Submitting product data:', productData);
 
       try {
         if (!supabase) throw new Error('Supabase not configured');
         
+        let result;
         if (editingProduct) {
-          const { error } = await supabase
+          result = await supabase
             .from('products')
             .update(productData)
             .eq('id', editingProduct.id);
-          if (error) throw error;
         } else {
-          const { error } = await supabase
+          result = await supabase
             .from('products')
             .insert([productData]);
-          if (error) throw error;
+        }
+        
+        if (result.error) {
+          // Check if the error is due to missing columns
+          if (result.error.message?.includes('column "is_sale" does not exist') || 
+              result.error.message?.includes('column "old_price" does not exist')) {
+            throw new Error('У вашій базі даних Supabase відсутні колонки "is_sale" або "old_price". Будь ласка, додайте їх до таблиці "products" (is_sale: boolean, old_price: numeric) або зверніться до розробника.');
+          }
+          throw result.error;
         }
         
         alert(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
-        setFormData({ name: '', description: '', price: '', images: [], sku: '' });
+        setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '' });
         fetchProducts();
       } catch (error: any) {
         console.error('Error submitting product:', error);
@@ -250,19 +279,27 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const handleDeleteAd = async (id: number) => {
+  const handleDeleteAd = async (id: number | string) => {
     if (confirm('Ви впевнені?')) {
       try {
         if (!supabase) throw new Error('Supabase not configured');
-        const { error } = await supabase
+        
+        const { data, error } = await supabase
           .from('ads')
           .delete()
-          .eq('id', id);
+          .eq('id', id)
+          .select();
+        
         if (error) throw error;
-        fetchAds();
+        
+        if (!data || data.length === 0) {
+          alert('Помилка: Оголошення не видалено. Перевірте налаштування прав доступу (RLS) у Supabase для таблиці "ads".');
+        } else {
+          fetchAds();
+        }
       } catch (error: any) {
         console.error('Error deleting ad:', error);
-        alert('Помилка при видаленні: ' + error.message);
+        alert('Помилка при видаленні: ' + (error.message || 'Невідома помилка'));
       }
     }
   };
@@ -485,7 +522,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={() => {
                     setIsAdding(true);
                     setEditingProduct(null);
-                    setFormData({ name: '', description: '', price: '', images: [], sku: '' });
+                    setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '' });
                   }}
                   className="flex items-center gap-2 bg-stone-900 text-white px-4 py-2 rounded-xl hover:bg-stone-800 transition-colors"
                 >
@@ -493,8 +530,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </button>
               </div>
 
-              <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
-                <table className="w-full text-left">
+              <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
+                <table className="w-full text-left min-w-[600px]">
                   <thead className="bg-stone-50 border-bottom border-stone-200">
                     <tr>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Код</th>
@@ -517,7 +554,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               className="w-10 h-10 rounded-lg object-cover"
                               alt=""
                             />
-                            <span className="font-medium">{product.name}</span>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{product.name}</span>
+                              {product.is_sale && (
+                                <span className="text-[10px] font-bold text-red-600 uppercase">Знижка</span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">{product.price} грн</td>
@@ -532,7 +574,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                   description: product.description,
                                   price: product.price.toString(),
                                   images: product.images,
-                                  sku: product.sku
+                                  sku: product.sku,
+                                  is_sale: product.is_sale || false,
+                                  old_price: product.old_price?.toString() || ''
                                 });
                                 setIsAdding(true);
                               }}
@@ -587,8 +631,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
-              <table className="w-full text-left">
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
+              <table className="w-full text-left min-w-[600px]">
                 <thead className="bg-stone-50 border-bottom border-stone-200">
                   <tr>
                     <th className="px-6 py-4 text-sm font-medium text-stone-500">Заголовок</th>
@@ -655,8 +699,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
-              <table className="w-full text-left">
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
+              <table className="w-full text-left min-w-[600px]">
                 <thead className="bg-stone-50 border-bottom border-stone-200">
                   <tr>
                     <th className="px-6 py-4 text-sm font-medium text-stone-500">Клієнт</th>
@@ -883,6 +927,31 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       placeholder="0.00"
                     />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  <div className="flex items-center gap-2 pt-2">
+                    <input 
+                      type="checkbox"
+                      id="is_sale"
+                      checked={formData.is_sale}
+                      onChange={e => setFormData({ ...formData, is_sale: e.target.checked })}
+                      className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
+                    />
+                    <label htmlFor="is_sale" className="text-sm font-medium text-stone-700">Товар на знижці</label>
+                  </div>
+                  {formData.is_sale && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-stone-700">Стара ціна (грн)</label>
+                      <input 
+                        type="number"
+                        value={formData.old_price}
+                        onChange={e => setFormData({ ...formData, old_price: e.target.value })}
+                        className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

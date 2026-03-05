@@ -417,6 +417,11 @@ export default function App() {
                       className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
                       alt={product.name}
                     />
+                    {product.is_sale && (
+                      <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
+                        Знижка
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
                         Детальніше
@@ -427,7 +432,12 @@ export default function App() {
                     <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
                     <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
                   </div>
-                  <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
+                    {product.is_sale && product.old_price && (
+                      <p className="text-stone-400 font-mono text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
+                    )}
+                  </div>
                 </motion.div>
               ))}
             </div>
@@ -656,7 +666,7 @@ export default function App() {
                     </a>
                   </div>
                   <p className="text-[10px] text-stone-400 text-center">
-                    Будь ласка, повідомте власнику, що ви знайшли це оголошення на AUTO TUTANU
+                    Ви також можете опублікувати в нас свої диски, звертайтесь до нас в <a href="https://www.instagram.com/auto_tutanu.ua" target="_blank" className="font-semibold hover:text-stone-600 transition-colors">Instagram</a>
                   </p>
                 </div>
               </div>
@@ -860,10 +870,20 @@ export default function App() {
                 
                 <div className="mb-8">
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-3xl font-bold">{selectedProduct.name}</h3>
+                    <div className="flex flex-col gap-1">
+                      <h3 className="text-3xl font-bold">{selectedProduct.name}</h3>
+                      {selectedProduct.is_sale && (
+                        <span className="inline-block w-fit bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Знижка</span>
+                      )}
+                    </div>
                     <span className="text-xs font-mono bg-stone-100 px-3 py-1 rounded-full text-stone-500 uppercase tracking-wider">Код: {selectedProduct.sku}</span>
                   </div>
-                  <p className="text-2xl font-mono text-stone-900">{selectedProduct.price} грн</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-2xl font-mono text-stone-900">{selectedProduct.price} грн</p>
+                    {selectedProduct.is_sale && selectedProduct.old_price && (
+                      <p className="text-xl font-mono text-stone-400 line-through decoration-red-500/50">{selectedProduct.old_price} грн</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="prose prose-stone mb-10">
@@ -890,47 +910,12 @@ export default function App() {
                       <MessageCircle size={20} /> WhatsApp
                     </a>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <a 
                       href={`tel:${PHONE_NUMBER}`}
                       className="flex items-center justify-center gap-3 bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 transition-all"
                     >
                       <Phone size={20} /> Зателефонувати
-                    </a>
-                    <a 
-                      href={INSTAGRAM_LINK}
-                      target="_blank"
-                      className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
-                    >
-                      <Instagram size={20} /> Instagram
-                    </a>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <a 
-                      href={FACEBOOK_LINK}
-                      target="_blank"
-                      className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
-                    >
-                      <Facebook size={20} /> Facebook
-                    </a>
-                    <a 
-                      href={TIKTOK_LINK}
-                      target="_blank"
-                      className="flex items-center justify-center gap-3 border border-stone-200 py-4 rounded-2xl font-bold hover:bg-stone-50 transition-all"
-                    >
-                      <svg 
-                        viewBox="0 0 24 24" 
-                        width="20" 
-                        height="20" 
-                        stroke="currentColor" 
-                        strokeWidth="2" 
-                        fill="none" 
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
-                      >
-                        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
-                      </svg>
-                      TikTok
                     </a>
                   </div>
                 </div>
