@@ -30,7 +30,7 @@ import { supabase } from './services/supabase';
 
 const PHONE_NUMBER = "0993177673";
 const WHATSAPP_LINK = `https://wa.me/380993177673`;
-const TELEGRAM_LINK = "https://t.me/auto_tutanu_ua";
+const TELEGRAM_LINK = "https://t.me/CT8228";
 const INSTAGRAM_LINK = "https://www.instagram.com/auto_tutanu.ua";
 const TIKTOK_LINK = "https://www.tiktok.com/@auto_tutanu.ua";
 const FACEBOOK_LINK = "https://www.facebook.com/profile.php?id=100041438364922";
@@ -820,12 +820,12 @@ export default function App() {
             />
             <motion.div 
               layoutId={`product-${selectedProduct.id}`}
-              className="relative bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]"
+              className="relative bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row max-h-[95vh] sm:max-h-[90vh]"
             >
-              <div className="md:w-1/2 relative bg-white h-[400px] md:h-auto border-r border-stone-100">
+              <div className="md:w-1/2 relative bg-white h-[250px] sm:h-[400px] md:h-auto border-b md:border-b-0 md:border-r border-stone-100">
                 <img 
                   src={selectedProduct.images[currentImageIndex] || 'https://picsum.photos/seed/car/800/1000'} 
-                  className="w-full h-full object-contain p-4"
+                  className="w-full h-full object-contain p-2 sm:p-4"
                   alt=""
                 />
                 {selectedProduct.images.length > 1 && (
@@ -860,62 +860,62 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="md:w-1/2 p-8 md:p-12 overflow-y-auto">
+              <div className="md:w-1/2 p-6 sm:p-8 md:p-12 overflow-y-auto">
                 <button 
                   onClick={() => setSelectedProduct(null)}
-                  className="absolute top-6 right-6 p-2 text-stone-400 hover:text-stone-900 transition-colors"
+                  className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 text-stone-400 hover:text-stone-900 transition-colors z-10 bg-white/80 rounded-full backdrop-blur-sm"
                 >
-                  <X size={24} />
+                  <X size={20} className="sm:w-6 sm:h-6" />
                 </button>
                 
-                <div className="mb-8">
-                  <div className="flex justify-between items-start mb-2">
+                <div className="mb-4 sm:mb-8">
+                  <div className="flex justify-between items-start mb-1 sm:mb-2">
                     <div className="flex flex-col gap-1">
-                      <h3 className="text-3xl font-bold">{selectedProduct.name}</h3>
+                      <h3 className="text-xl sm:text-3xl font-bold">{selectedProduct.name}</h3>
                       {selectedProduct.is_sale && (
                         <span className="inline-block w-fit bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Знижка</span>
                       )}
                     </div>
-                    <span className="text-xs font-mono bg-stone-100 px-3 py-1 rounded-full text-stone-500 uppercase tracking-wider">Код: {selectedProduct.sku}</span>
+                    <span className="text-[10px] sm:text-xs font-mono bg-stone-100 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-stone-500 uppercase tracking-wider">Код: {selectedProduct.sku}</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-2xl font-mono text-stone-900">{selectedProduct.price} грн</p>
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <p className="text-lg sm:text-2xl font-mono text-stone-900">{selectedProduct.price} грн</p>
                     {selectedProduct.is_sale && selectedProduct.old_price && (
-                      <p className="text-xl font-mono text-stone-400 line-through decoration-red-500/50">{selectedProduct.old_price} грн</p>
+                      <p className="text-sm sm:text-xl font-mono text-stone-400 line-through decoration-red-500/50">{selectedProduct.old_price} грн</p>
                     )}
                   </div>
                 </div>
 
-                <div className="prose prose-stone mb-10">
-                  <p className="text-stone-600 leading-relaxed">
+                <div className="prose prose-stone mb-6 sm:mb-10">
+                  <p className="text-sm sm:text-base text-stone-600 leading-relaxed">
                     {selectedProduct.description}
                   </p>
                 </div>
 
-                <div className="space-y-4">
-                  <h4 className="font-bold text-sm uppercase tracking-widest text-stone-400">Зв'язатись з нами</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-3 sm:space-y-4">
+                  <h4 className="font-bold text-[10px] sm:text-sm uppercase tracking-widest text-stone-400">Зв'язатись з нами</h4>
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <a 
                       href={TELEGRAM_LINK}
                       target="_blank"
-                      className="flex items-center justify-center gap-3 bg-[#229ED9] text-white py-4 rounded-2xl font-bold hover:bg-[#1d89bc] transition-all"
+                      className="flex items-center justify-center gap-2 sm:gap-3 bg-[#229ED9] text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold hover:bg-[#1d89bc] transition-all text-sm sm:text-base"
                     >
-                      <Send size={20} /> Telegram
+                      <Send size={18} className="sm:w-5 sm:h-5" /> Telegram
                     </a>
                     <a 
                       href={WHATSAPP_LINK}
                       target="_blank"
-                      className="flex items-center justify-center gap-3 bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all"
+                      className="flex items-center justify-center gap-2 sm:gap-3 bg-emerald-500 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold hover:bg-emerald-600 transition-all text-sm sm:text-base"
                     >
-                      <MessageCircle size={20} /> WhatsApp
+                      <MessageCircle size={18} className="sm:w-5 sm:h-5" /> WhatsApp
                     </a>
                   </div>
-                  <div className="grid grid-cols-1 gap-4">
+                  <div className="grid grid-cols-1">
                     <a 
                       href={`tel:${PHONE_NUMBER}`}
-                      className="flex items-center justify-center gap-3 bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 transition-all"
+                      className="flex items-center justify-center gap-2 sm:gap-3 bg-stone-900 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold hover:bg-stone-800 transition-all text-sm sm:text-base"
                     >
-                      <Phone size={20} /> Зателефонувати
+                      <Phone size={18} className="sm:w-5 sm:h-5" /> Зателефонувати
                     </a>
                   </div>
                 </div>
