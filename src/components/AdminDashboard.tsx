@@ -563,26 +563,33 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'product' | 'ad') => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Limit to 10MB per image for initial reading, then we compress
-      if (file.size > 10 * 1024 * 1024) {
-        showNotification('Файл занадто великий. Максимальний розмір - 10МБ', 'error');
-        if (e.target) e.target.value = '';
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64String = reader.result as string;
-        const compressedBase64 = await compressImage(base64String);
-        
-        if (type === 'product' && formData.images.length < 10) {
-          setFormData({ ...formData, images: [...formData.images, compressedBase64] });
-        } else if (type === 'ad' && adFormData.images.length < 10) {
-          setAdFormData({ ...adFormData, images: [...adFormData.images, compressedBase64] });
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      Array.from(files).forEach(file => {
+        // Limit to 10MB per image for initial reading, then we compress
+        if (file.size > 10 * 1024 * 1024) {
+          showNotification(`Файл ${file.name} занадто великий. Максимальний розмір - 10МБ`, 'error');
+          return;
         }
-      };
-      reader.readAsDataURL(file);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64String = reader.result as string;
+          const compressedBase64 = await compressImage(base64String);
+          
+          if (type === 'product') {
+            setFormData(prev => {
+              if (prev.images.length >= 10) return prev;
+              return { ...prev, images: [...prev.images, compressedBase64] };
+            });
+          } else if (type === 'ad') {
+            setAdFormData(prev => {
+              if (prev.images.length >= 10) return prev;
+              return { ...prev, images: [...prev.images, compressedBase64] };
+            });
+          }
+        };
+        reader.readAsDataURL(file);
+      });
     }
     if (e.target) e.target.value = '';
   };
@@ -1149,6 +1156,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     ref={adFileInputRef}
                     onChange={(e) => handleFileUpload(e, 'ad')}
                     accept="image/*"
+                    multiple
                     className="hidden"
                   />
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -1333,6 +1341,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     ref={fileInputRef}
                     onChange={(e) => handleFileUpload(e, 'product')}
                     accept="image/*"
+                    multiple
                     className="hidden"
                   />
 
