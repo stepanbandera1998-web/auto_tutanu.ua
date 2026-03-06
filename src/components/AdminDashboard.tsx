@@ -41,6 +41,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats'>('products');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -562,40 +564,86 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'product' | 'ad') => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'product' | 'ad') => {
     const files = e.target.files;
-    if (files && files.length > 0) {
-      Array.from(files).forEach(file => {
-        // Limit to 10MB per image for initial reading, then we compress
-        if (file.size > 10 * 1024 * 1024) {
-          showNotification(`Файл ${file.name} занадто великий. Максимальний розмір - 10МБ`, 'error');
-          return;
+    if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: fileList.length });
+
+    try {
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        setUploadProgress({ current: i + 1, total: fileList.length });
+
+        // Limit to 15MB per image for initial reading on mobile, then we compress
+        if (file.size > 15 * 1024 * 1024) {
+          showNotification(`Файл ${file.name} занадто великий (>15MB)`, 'error');
+          continue;
         }
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64String = reader.result as string;
-          const compressedBase64 = await compressImage(base64String);
-          
-          if (type === 'product') {
-            setFormData(prev => {
-              if (prev.images.length >= 10) return prev;
-              return { ...prev, images: [...prev.images, compressedBase64] };
-            });
-          } else if (type === 'ad') {
-            setAdFormData(prev => {
-              if (prev.images.length >= 10) return prev;
-              return { ...prev, images: [...prev.images, compressedBase64] };
-            });
-          }
-        };
-        reader.readAsDataURL(file);
-      });
+
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const compressedBase64 = await compressImage(base64, 1024, 1024, 0.6);
+        
+        if (type === 'product') {
+          setFormData(prev => {
+            if (prev.images.length >= 10) return prev;
+            return { ...prev, images: [...prev.images, compressedBase64] };
+          });
+        } else if (type === 'ad') {
+          setAdFormData(prev => {
+            if (prev.images.length >= 10) return prev;
+            return { ...prev, images: [...prev.images, compressedBase64] };
+          });
+        }
+      }
+      showNotification(`Завантажено ${fileList.length} фото`, 'success');
+    } catch (err) {
+      console.error('Upload error:', err);
+      showNotification('Помилка при завантаженні фото', 'error');
+    } finally {
+      setIsUploading(false);
+      if (e.target) e.target.value = '';
     }
-    if (e.target) e.target.value = '';
   };
 
   return (
     <div className="min-h-screen bg-stone-50 p-4 md:p-8">
+      <AnimatePresence>
+        {isUploading && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md bg-white rounded-2xl shadow-2xl border border-stone-100 p-4 flex items-center gap-4"
+          >
+            <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <ImageIcon size={20} className="animate-pulse" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex justify-between mb-1">
+                <span className="text-sm font-medium">Обробка фото...</span>
+                <span className="text-xs text-stone-500 font-mono">{uploadProgress.current} / {uploadProgress.total}</span>
+              </div>
+              <div className="w-full h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-purple-600"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
