@@ -17,6 +17,16 @@ import {
 } from 'lucide-react';
 import { Product, Stats, Ad, Review } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  Cell
+} from 'recharts';
 import { supabase } from '../services/supabase';
 import { GoogleGenAI } from "@google/genai";
 
@@ -28,7 +38,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [isAdding, setIsAdding] = useState(false);
   const [isAddingAd, setIsAddingAd] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews'>('products');
+  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats'>('products');
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -55,6 +67,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void) => {
+    setConfirmModal({ message, onConfirm });
+  };
 
   const fetchReviews = async () => {
     try {
@@ -108,42 +129,71 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     try {
       if (!supabase) throw new Error('Supabase not configured');
       
+      let visitsCount = 0;
+      let productsData: any[] = [];
+      let totalViews = 0;
+      let mostViewed: any[] = [];
+
       // Fetch products for views and most viewed
-      const { data: productsData, error: productsError } = await supabase
-        .from('products')
-        .select('id, name, views')
-        .order('views', { ascending: false });
-      
-      if (productsError) throw productsError;
+      try {
+        const { data, error: productsError } = await supabase
+          .from('products')
+          .select('id, name, views')
+          .order('views', { ascending: false });
+        
+        if (productsError) throw productsError;
+        productsData = data || [];
+        totalViews = productsData.reduce((acc, p) => acc + (p.views || 0), 0);
+        mostViewed = productsData.slice(0, 5);
+      } catch (err: any) {
+        console.warn('Could not fetch products for stats:', err.message);
+      }
       
       // Fetch total visits from stats table
-      const { count: visitsCount, error: visitsError } = await supabase
-        .from('stats')
-        .select('*', { count: 'exact', head: true })
-        .eq('type', 'visit');
-      
-      if (visitsError) throw visitsError;
-
-      const totalViews = productsData?.reduce((acc, p) => acc + (p.views || 0), 0) || 0;
-      const mostViewed = (productsData || []).slice(0, 5);
+      try {
+        const { count, error: visitsError } = await supabase
+          .from('stats')
+          .select('*', { count: 'exact', head: true })
+          .eq('type', 'visit');
         
+        if (visitsError) throw visitsError;
+        visitsCount = count || 0;
+      } catch (err: any) {
+        console.warn('Could not fetch visits from Supabase stats table:', err.message);
+      }
+
       // For online users, we still use the server socket
-      const res = await fetch('/api/stats');
-      const serverData = await res.json();
+      let onlineUsers = 0;
+      try {
+        const res = await fetch('/api/stats');
+        if (res.ok) {
+          const serverData = await res.json();
+          onlineUsers = serverData.onlineUsers;
+        }
+      } catch (err) {
+        console.warn('Could not fetch online users from server:', err);
+      }
       
       setStats({
-        totalVisits: visitsCount || 0,
+        totalVisits: visitsCount,
         totalViews: totalViews,
         mostViewed: mostViewed,
-        onlineUsers: serverData.onlineUsers
+        onlineUsers: onlineUsers
       });
     } catch (error) {
-      console.error('Error fetching stats from Supabase:', error);
+      console.error('Error fetching stats:', error);
       // Fallback to server stats if Supabase fails
       try {
         const res = await fetch('/api/stats');
-        const data = await res.json();
-        setStats(data);
+        if (res.ok) {
+          const data = await res.json();
+          setStats({
+            totalVisits: data.totalVisits || 0,
+            totalViews: data.totalViews || 0,
+            mostViewed: data.mostViewed || [],
+            onlineUsers: data.onlineUsers || 0
+          });
+        }
       } catch (e) {
         console.error('Full stats failure:', e);
       }
@@ -215,20 +265,20 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           throw result.error;
         }
         
-        alert(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
+        showNotification(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
         setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '' });
         fetchProducts();
       } catch (error: any) {
         console.error('Error submitting product:', error);
-        alert('Помилка: ' + error.message);
+        showNotification('Помилка: ' + error.message, 'error');
       } finally {
         setIsSubmitting(false);
       }
     } catch (error: any) {
       console.error('Error in handleSubmit:', error);
-      alert('Помилка: ' + error.message);
+      showNotification('Помилка: ' + error.message, 'error');
       setIsSubmitting(false);
     }
   };
@@ -248,22 +298,27 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           price,
         }]);
       
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('column "is_placeholder" does not exist')) {
+          throw new Error('У вашій таблиці "ads" відсутня колонка "is_placeholder". Будь ласка, додайте її (boolean, default false) або зверніться до розробника.');
+        }
+        throw error;
+      }
       
-      alert('Оголошення опубліковано!');
+      showNotification('Оголошення опубліковано!');
       setIsAddingAd(false);
       setAdFormData({ title: '', description: '', price: '', phone: '', images: [], is_placeholder: false });
       fetchAds();
     } catch (error: any) {
       console.error('Error submitting ad:', error);
-      alert('Помилка: ' + error.message);
+      showNotification('Помилка: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Ви впевнені?')) {
+    showConfirm('Ви впевнені?', async () => {
       try {
         if (!supabase) throw new Error('Supabase not configured');
         const { error } = await supabase
@@ -272,15 +327,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           .eq('id', id);
         if (error) throw error;
         fetchProducts();
+        showNotification('Товар видалено');
       } catch (error: any) {
         console.error('Error deleting product:', error);
-        alert('Помилка при видаленні: ' + error.message);
+        showNotification('Помилка при видаленні: ' + error.message, 'error');
       }
-    }
+    });
   };
 
   const handleDeleteAd = async (id: number | string) => {
-    if (confirm('Ви впевнені?')) {
+    showConfirm('Ви впевнені?', async () => {
       try {
         if (!supabase) throw new Error('Supabase not configured');
         
@@ -293,19 +349,20 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         if (error) throw error;
         
         if (!data || data.length === 0) {
-          alert('Помилка: Оголошення не видалено. Перевірте налаштування прав доступу (RLS) у Supabase для таблиці "ads".');
+          showNotification('Помилка: Оголошення не видалено. Перевірте налаштування прав доступу (RLS) у Supabase для таблиці "ads".', 'error');
         } else {
           fetchAds();
+          showNotification('Оголошення видалено');
         }
       } catch (error: any) {
         console.error('Error deleting ad:', error);
-        alert('Помилка при видаленні: ' + (error.message || 'Невідома помилка'));
+        showNotification('Помилка при видаленні: ' + (error.message || 'Невідома помилка'), 'error');
       }
-    }
+    });
   };
 
   const handleDeleteReview = async (id: number) => {
-    if (confirm('Ви впевнені, що хочете видалити цей відгук?')) {
+    showConfirm('Ви впевнені, що хочете видалити цей відгук?', async () => {
       try {
         if (!supabase) throw new Error('Supabase not configured');
         const { error } = await supabase
@@ -314,77 +371,78 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           .eq('id', id);
         if (error) throw error;
         fetchReviews();
+        showNotification('Відгук видалено');
       } catch (error: any) {
         console.error('Error deleting review:', error);
-        alert('Помилка при видаленні: ' + error.message);
+        showNotification('Помилка при видаленні: ' + error.message, 'error');
       }
-    }
+    });
   };
 
   const handleSeedReviews = async () => {
-    if (!confirm('Ви впевнені, що хочете згенерувати 50 випадкових відгуків? Це може зайняти деякий час.')) return;
-    
-    setIsSubmitting(true);
-    console.log('Starting to seed reviews...');
-    try {
-      const names = [
-        "Олександр", "Марія", "Іван", "Олена", "Дмитро", "Тетяна", "Андрій", "Оксана", "Сергій", "Наталія",
-        "Віталій", "Юлія", "Максим", "Світлана", "Артем", "Ірина", "Денис", "Ольга", "Микола", "Анна",
-        "Василь", "Вікторія", "Павло", "Людмила", "Євген", "Галина", "Роман", "Надія", "Тарас", "Валентина"
-      ];
-      const comments = [
-        "Чудові диски, якість на висоті! Вже рік катаюсь, все супер.",
-        "Швидка доставка, рекомендую цей магазин всім знайомим.",
-        "Дуже задоволений покупкою, виглядають круто на моєму авто.",
-        "Найкращий сервіс в Україні. Допомогли підібрати правильний виліт.",
-        "Все підійшло ідеально, дякую за професійну консультацію!",
-        "Великий вибір та приємні ціни. Буду звертатися ще.",
-        "Професійна консультація, допомогли з вибором дисків для BMW.",
-        "Диски прийшли добре запаковані, без жодних подряпин.",
-        "Якісний товар за помірну ціну. Однозначно 5 зірок.",
-        "Буду замовляти ще! Дуже задоволений відношенням до клієнта.",
-        "Диски просто вогонь! Машина стала виглядати зовсім інакше.",
-        "Дякую за оперативність. Замовив вчора, сьогодні вже на пошті.",
-        "Якість фарбування вражає. Навіть після зими як нові.",
-        "Приємно мати справу з професіоналами. Рекомендую!",
-        "Найкращі ціни на оригінальні диски. Перевірено часом.",
-        "Дуже ввічливий персонал. Все розказали і показали.",
-        "Шукав саме такі диски дуже довго. Дякую, що знайшли їх для мене!",
-        "Доставка в Одесу зайняла всього один день. Супер!",
-        "Параметри підійшли ідеально, ніде не затирає.",
-        "Задоволений на всі 100%. Кращого варіанту не знайти."
-      ];
+    showConfirm('Ви впевнені, що хочете згенерувати 50 випадкових відгуків? Це може зайняти деякий час.', async () => {
+      setIsSubmitting(true);
+      console.log('Starting to seed reviews...');
+      try {
+        const names = [
+          "Олександр", "Марія", "Іван", "Олена", "Дмитро", "Тетяна", "Андрій", "Оксана", "Сергій", "Наталія",
+          "Віталій", "Юлія", "Максим", "Світлана", "Артем", "Ірина", "Денис", "Ольга", "Микола", "Анна",
+          "Василь", "Вікторія", "Павло", "Людмила", "Євген", "Галина", "Роман", "Надія", "Тарас", "Валентина"
+        ];
+        const comments = [
+          "Чудові диски, якість на висоті! Вже рік катаюсь, все супер.",
+          "Швидка доставка, рекомендую цей магазин всім знайомим.",
+          "Дуже задоволений покупкою, виглядають круто на моєму авто.",
+          "Найкращий сервіс в Україні. Допомогли підібрати правильний виліт.",
+          "Все підійшло ідеально, дякую за професійну консультацію!",
+          "Великий вибір та приємні ціни. Буду звертатися ще.",
+          "Професійна консультація, допомогли з вибором дисків для BMW.",
+          "Диски прийшли добре запаковані, без жодних подряпин.",
+          "Якісний товар за помірну ціну. Однозначно 5 зірок.",
+          "Буду замовляти ще! Дуже задоволений відношенням до клієнта.",
+          "Диски просто вогонь! Машина стала виглядати зовсім інакше.",
+          "Дякую за оперативність. Замовив вчора, сьогодні вже на пошті.",
+          "Якість фарбування вражає. Навіть після зими як нові.",
+          "Приємно мати справу з професіоналами. Рекомендую!",
+          "Найкращі ціни на оригінальні диски. Перевірено часом.",
+          "Дуже ввічливий персонал. Все розказали і показали.",
+          "Шукав саме такі диски дуже довго. Дякую, що знайшли їх для мене!",
+          "Доставка в Одесу зайняла всього один день. Супер!",
+          "Параметри підійшли ідеально, ніде не затирає.",
+          "Задоволений на всі 100%. Кращого варіанту не знайти."
+        ];
 
-      const newReviews = [];
-      const startDate = new Date('2021-01-01T00:00:00Z').getTime();
-      const endDate = new Date().getTime();
+        const newReviews = [];
+        const startDate = new Date('2021-01-01T00:00:00Z').getTime();
+        const endDate = new Date().getTime();
 
-      for (let i = 0; i < 50; i++) {
-        const randomTimestamp = startDate + Math.random() * (endDate - startDate);
-        newReviews.push({
-          user_name: names[Math.floor(Math.random() * names.length)],
-          rating: 4 + Math.floor(Math.random() * 2),
-          comment: comments[Math.floor(Math.random() * comments.length)],
-          created_at: new Date(randomTimestamp).toISOString()
-        });
+        for (let i = 0; i < 50; i++) {
+          const randomTimestamp = startDate + Math.random() * (endDate - startDate);
+          newReviews.push({
+            user_name: names[Math.floor(Math.random() * names.length)],
+            rating: 4 + Math.floor(Math.random() * 2),
+            comment: comments[Math.floor(Math.random() * comments.length)],
+            created_at: new Date(randomTimestamp).toISOString()
+          });
+        }
+
+        if (supabase) {
+          const { error } = await supabase.from('reviews').insert(newReviews);
+          if (error) throw error;
+          console.log('Successfully seeded reviews to Supabase');
+        } else {
+          throw new Error('Supabase not configured');
+        }
+        
+        showNotification('50 відгуків успішно згенеровано!');
+        fetchReviews();
+      } catch (error: any) {
+        console.error('Error seeding reviews:', error);
+        showNotification('Помилка при генерації: ' + error.message, 'error');
+      } finally {
+        setIsSubmitting(false);
       }
-
-      if (supabase) {
-        const { error } = await supabase.from('reviews').insert(newReviews);
-        if (error) throw error;
-        console.log('Successfully seeded reviews to Supabase');
-      } else {
-        throw new Error('Supabase not configured');
-      }
-      
-      alert('50 відгуків успішно згенеровано!');
-      fetchReviews();
-    } catch (error: any) {
-      console.error('Error seeding reviews:', error);
-      alert('Помилка при генерації: ' + error.message);
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const [imageUrlInput, setImageUrlInput] = useState('');
@@ -399,22 +457,129 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizationProgress, setOptimizationProgress] = useState(0);
+
+  const optimizeDatabase = async () => {
+    showConfirm('Це стисне всі існуючі зображення в базі даних для пришвидшення завантаження. Це може зайняти деякий час. Продовжити?', async () => {
+      setIsOptimizing(true);
+      setOptimizationProgress(0);
+      try {
+        if (!supabase) throw new Error('Supabase not configured');
+
+        // Optimize Products
+        const { data: productsData, error: pError } = await supabase.from('products').select('*');
+        if (pError) throw pError;
+
+        const totalItems = (productsData?.length || 0) + (ads.length || 0);
+        let processedItems = 0;
+
+        if (productsData) {
+          for (const product of productsData) {
+            const optimizedImages = await Promise.all(
+              product.images.map(async (img: string) => {
+                if (img.startsWith('data:image')) {
+                  return await compressImage(img);
+                }
+                return img;
+              })
+            );
+
+            await supabase
+              .from('products')
+              .update({ images: optimizedImages })
+              .eq('id', product.id);
+            
+            processedItems++;
+            setOptimizationProgress(Math.round((processedItems / totalItems) * 100));
+          }
+        }
+
+        // Optimize Ads
+        const { data: adsData, error: aError } = await supabase.from('ads').select('*');
+        if (aError) throw aError;
+
+        if (adsData) {
+          for (const ad of adsData) {
+            const optimizedImages = await Promise.all(
+              ad.images.map(async (img: string) => {
+                if (img.startsWith('data:image')) {
+                  return await compressImage(img);
+                }
+                return img;
+              })
+            );
+
+            await supabase
+              .from('ads')
+              .update({ images: optimizedImages })
+              .eq('id', ad.id);
+            
+            processedItems++;
+            setOptimizationProgress(Math.round((processedItems / totalItems) * 100));
+          }
+        }
+
+        showNotification('Базу даних оптимізовано!');
+        fetchProducts();
+        fetchAds();
+      } catch (error: any) {
+        console.error('Optimization error:', error);
+        showNotification('Помилка оптимізації: ' + error.message, 'error');
+      } finally {
+        setIsOptimizing(false);
+      }
+    });
+  };
+
+  const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.5): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+    });
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'product' | 'ad') => {
     const file = e.target.files?.[0];
     if (file) {
-      // Limit to 5MB per image
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Файл занадто великий. Максимальний розмір - 5МБ');
+      // Limit to 10MB per image for initial reading, then we compress
+      if (file.size > 10 * 1024 * 1024) {
+        showNotification('Файл занадто великий. Максимальний розмір - 10МБ', 'error');
         if (e.target) e.target.value = '';
         return;
       }
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const base64String = reader.result as string;
+        const compressedBase64 = await compressImage(base64String);
+        
         if (type === 'product' && formData.images.length < 10) {
-          setFormData({ ...formData, images: [...formData.images, base64String] });
+          setFormData({ ...formData, images: [...formData.images, compressedBase64] });
         } else if (type === 'ad' && adFormData.images.length < 10) {
-          setAdFormData({ ...adFormData, images: [...adFormData.images, base64String] });
+          setAdFormData({ ...adFormData, images: [...adFormData.images, compressedBase64] });
         }
       };
       reader.readAsDataURL(file);
@@ -508,6 +673,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
             {activeView === 'reviews' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
+          <button 
+            onClick={() => setActiveView('stats')}
+            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'stats' ? 'text-stone-900' : 'text-stone-400'}`}
+          >
+            <div className="flex items-center gap-2">
+              <TrendingUp size={20} /> Статистика
+            </div>
+            {activeView === 'stats' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
+          </button>
         </div>
       </div>
 
@@ -553,6 +727,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               src={product.images[0] || 'https://picsum.photos/seed/car/200/200'} 
                               className="w-10 h-10 rounded-lg object-cover"
                               alt=""
+                              referrerPolicy="no-referrer"
                             />
                             <div className="flex flex-col">
                               <span className="font-medium">{product.name}</span>
@@ -604,7 +779,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               <div className="admin-card">
                 <h3 className="text-lg font-semibold mb-4">Найпопулярніші товари</h3>
                 <div className="space-y-4">
-                  {stats?.mostViewed.map((item, idx) => (
+                  {stats?.mostViewed?.map((item, idx) => (
                     <div key={item.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="text-stone-400 font-mono text-sm">0{idx + 1}</span>
@@ -613,6 +788,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <span className="text-sm text-stone-500">{item.views} переглядів</span>
                     </div>
                   ))}
+                  {(!stats?.mostViewed || stats.mostViewed.length === 0) && (
+                    <p className="text-sm text-stone-400 text-center py-4">Немає даних</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -651,6 +829,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                             src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/ad/200/200'} 
                             className="w-10 h-10 rounded-lg object-cover"
                             alt=""
+                            referrerPolicy="no-referrer"
                           />
                           <span className="font-medium">{ad.title}</span>
                         </div>
@@ -751,6 +930,135 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
           </div>
         )}
+
+        {activeView === 'stats' && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm text-stone-500">Зараз на сайті</p>
+                    <p className="text-3xl font-bold">{stats?.onlineUsers || 0}</p>
+                  </div>
+                </div>
+                <div className="h-1 w-full bg-stone-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 w-1/3 animate-pulse" />
+                </div>
+              </div>
+
+              <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                    <TrendingUp size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm text-stone-500">Всього візитів</p>
+                    <p className="text-3xl font-bold">{stats?.totalVisits || 0}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-stone-400">За весь час роботи магазину</p>
+              </div>
+
+              <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
+                    <Eye size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm text-stone-500">Переглядів товарів</p>
+                    <p className="text-3xl font-bold">{stats?.totalViews || 0}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-stone-400">Сумарна кількість переглядів усіх товарів</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-xl font-bold mb-8">Популярність товарів</h3>
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 12, fill: '#888' }}
+                        hide
+                      />
+                      <YAxis 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 12, fill: '#888' }}
+                      />
+                      <Tooltip 
+                        cursor={{ fill: '#f9f9f9' }}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      />
+                      <Bar dataKey="views" radius={[4, 4, 4, 4]} barSize={32}>
+                        {(stats?.mostViewed || []).map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={index === 0 ? '#1c1917' : '#d6d3d1'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-6 space-y-3">
+                  {stats?.mostViewed?.slice(0, 3).map((item, idx) => (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-stone-900' : 'bg-stone-300'}`} />
+                        <span className="text-stone-600 truncate max-w-[150px]">{item.name}</span>
+                      </div>
+                      <span className="font-mono font-medium">{item.views}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-xl font-bold mb-8">Швидкий огляд</h3>
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
+                    <p className="text-sm text-stone-500 mb-1">Товарів</p>
+                    <p className="text-2xl font-bold text-stone-900">{products.length}</p>
+                  </div>
+                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
+                    <p className="text-sm text-stone-500 mb-1">Оголошень</p>
+                    <p className="text-2xl font-bold text-stone-900">{ads.length}</p>
+                  </div>
+                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
+                    <p className="text-sm text-stone-500 mb-1">Відгуків</p>
+                    <p className="text-2xl font-bold text-stone-900">{reviews.length}</p>
+                  </div>
+                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
+                    <p className="text-sm text-stone-500 mb-1">Знижки</p>
+                    <p className="text-2xl font-bold text-red-600">{products.filter(p => p.is_sale).length}</p>
+                  </div>
+                </div>
+
+                <div className="pt-8 border-t border-stone-100">
+                  <h4 className="font-bold mb-4">Інструменти обслуговування</h4>
+                  <button 
+                    onClick={optimizeDatabase}
+                    disabled={isOptimizing}
+                    className="w-full flex items-center justify-center gap-2 bg-stone-100 text-stone-900 py-4 rounded-2xl font-bold hover:bg-stone-200 transition-all disabled:opacity-50"
+                  >
+                    <TrendingUp size={20} className={isOptimizing ? 'animate-pulse' : ''} />
+                    {isOptimizing ? `Оптимізація... ${optimizationProgress}%` : 'Оптимізувати базу (Стиснути фото)'}
+                  </button>
+                  <p className="text-[10px] text-stone-400 mt-2 text-center">
+                    Це стисне всі існуючі фото в базі даних для пришвидшення завантаження сайту.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal for Add Ad */}
@@ -846,7 +1154,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {adFormData.images.map((url, idx) => (
                       <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
-                        <img src={url} className="w-full h-full object-cover" alt="" />
+                        <img src={url} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                         <button 
                           type="button"
                           onClick={() => setAdFormData({ ...adFormData, images: adFormData.images.filter((_, i) => i !== idx) })}
@@ -972,7 +1280,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       type="button"
                       disabled={isGenerating}
                       onClick={async () => {
-                        if (!formData.name) return alert('Спочатку введіть назву товару');
+                        if (!formData.name) return showNotification('Спочатку введіть назву товару', 'error');
                         setIsGenerating(true);
                         try {
                           const apiKey = process.env.GEMINI_API_KEY;
@@ -993,7 +1301,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                           setFormData({ ...formData, description: response.text });
                         } catch (err: any) {
                           console.error('AI Generation Error:', err);
-                          alert('Не вдалося згенерувати опис: ' + err.message);
+                          showNotification('Не вдалося згенерувати опис: ' + err.message, 'error');
                         } finally {
                           setIsGenerating(false);
                         }
@@ -1047,7 +1355,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {formData.images.map((url, idx) => (
                       <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
-                        <img src={url} className="w-full h-full object-cover" alt="" />
+                        <img src={url} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                         <button 
                           type="button"
                           onClick={() => setFormData({ ...formData, images: formData.images.filter((_, i) => i !== idx) })}
@@ -1078,6 +1386,62 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   {isSubmitting ? 'Публікація...' : (editingProduct ? 'Зберегти зміни' : 'Опублікувати товар')}
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Notifications */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-medium ${
+              notification.type === 'success' ? 'bg-stone-900 text-white' : 'bg-red-600 text-white'
+            }`}
+          >
+            {notification.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirm Modal */}
+      <AnimatePresence>
+        {confirmModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmModal(null)}
+              className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md text-center"
+            >
+              <h3 className="text-xl font-bold mb-4">Підтвердження</h3>
+              <p className="text-stone-600 mb-8">{confirmModal.message}</p>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setConfirmModal(null)}
+                  className="flex-1 px-6 py-3 bg-stone-100 text-stone-900 rounded-xl font-bold hover:bg-stone-200 transition-colors"
+                >
+                  Скасувати
+                </button>
+                <button 
+                  onClick={() => {
+                    confirmModal.onConfirm();
+                    setConfirmModal(null);
+                  }}
+                  className="flex-1 px-6 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors"
+                >
+                  Підтвердити
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

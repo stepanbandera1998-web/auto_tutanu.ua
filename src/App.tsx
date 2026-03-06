@@ -41,6 +41,10 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isLoadingAds, setIsLoadingAds] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -53,8 +57,14 @@ export default function App() {
   const [showAdModal, setShowAdModal] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [newReview, setNewReview] = useState({ user_name: '', rating: 5, comment: '' });
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured'>('checking');
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -66,8 +76,14 @@ export default function App() {
         // Test connection by fetching one ID from reviews
         const { error } = await supabase.from('reviews').select('id').limit(1);
         if (error) {
-          console.warn('Supabase connection test returned error:', error);
-          setSupabaseStatus('error');
+          // If the error is "relation does not exist", the table is missing but connection is OK
+          if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+            console.log('Supabase connected, but tables are missing');
+            setSupabaseStatus('connected');
+          } else {
+            console.warn('Supabase connection test returned error:', error);
+            setSupabaseStatus('error');
+          }
         } else {
           console.log('Supabase connection test successful');
           setSupabaseStatus('connected');
@@ -78,15 +94,33 @@ export default function App() {
       }
     };
     
-    checkConnection();
-    fetchProducts();
-    fetchReviews();
-    fetchAds();
+    const init = async () => {
+      setIsInitialLoading(true);
+      try {
+        await Promise.all([
+          checkConnection(),
+          fetchProducts(),
+          fetchReviews(),
+          fetchAds()
+        ]);
+      } catch (error) {
+        console.error('Initial fetch error:', error);
+      } finally {
+        setIsInitialLoading(false);
+      }
+    };
+    
+    init();
 
     // Log visit to Supabase
     if (supabase) {
       supabase.from('stats').insert([{ type: 'visit' }]).then(({ error }) => {
-        if (error) console.error('Error logging visit:', error);
+        if (error) {
+          // Only log if it's not a missing table error to avoid console clutter
+          if (!error.message?.includes('relation') || !error.message?.includes('does not exist')) {
+            console.error('Error logging visit to Supabase:', error);
+          }
+        }
       });
     }
 
@@ -107,6 +141,7 @@ export default function App() {
   const fetchProducts = async () => {
     try {
       if (!supabase) throw new Error('Supabase not configured');
+      setIsLoadingProducts(true);
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -117,6 +152,8 @@ export default function App() {
     } catch (error) {
       console.error('Error fetching products:', error);
       setProducts([]);
+    } finally {
+      setIsLoadingProducts(false);
     }
   };
 
@@ -139,6 +176,7 @@ export default function App() {
   const fetchAds = async () => {
     try {
       if (!supabase) throw new Error('Supabase not configured');
+      setIsLoadingAds(true);
       const { data, error } = await supabase
         .from('ads')
         .select('*')
@@ -146,11 +184,11 @@ export default function App() {
       
       if (error) throw error;
       
-      if (data && data.length > 0) {
-        setAds(data);
-      } else {
+      let newAds = data || [];
+      
+      if (newAds.length === 0) {
         // Add default placeholders if no ads found
-        const placeholders: Ad[] = [
+        newAds = [
           {
             id: -1,
             title: 'BMW M-Parallel Style 37',
@@ -182,11 +220,13 @@ export default function App() {
             created_at: new Date().toISOString()
           }
         ];
-        setAds(placeholders);
       }
+      setAds(newAds);
     } catch (error) {
       console.error('Error fetching ads:', error);
       setAds([]);
+    } finally {
+      setIsLoadingAds(false);
     }
   };
 
@@ -204,13 +244,13 @@ export default function App() {
       
       if (error) throw error;
       
-      alert('Дякуємо! Ваш відгук опубліковано.');
+      showNotification('Дякуємо! Ваш відгук опубліковано.');
       fetchReviews();
       setShowReviewForm(false);
       setNewReview({ user_name: '', rating: 5, comment: '' });
     } catch (error: any) {
       console.error('Error adding review:', error);
-      alert('Помилка при додаванні відгуку: ' + (error.message || 'Невідома помилка'));
+      showNotification('Помилка при додаванні відгуку: ' + (error.message || 'Невідома помилка'), 'error');
     } finally {
       setIsSubmittingReview(false);
     }
@@ -222,7 +262,7 @@ export default function App() {
       setIsAdmin(true);
       setShowAdminLogin(false);
     } else {
-      alert('Невірний пароль');
+      showNotification('Невірний пароль', 'error');
     }
   };
 
@@ -238,6 +278,26 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-50">
+      <AnimatePresence>
+        {isInitialLoading && (
+          <motion.div 
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center p-6 text-center"
+          >
+            <div className="w-16 h-16 border-4 border-stone-100 border-t-stone-900 rounded-full animate-spin mb-8" />
+            <h2 className="text-2xl font-bold mb-2">Завантаження Auto Tutanu</h2>
+            <p className="text-stone-500 max-w-xs">
+              Ми готуємо каталог для вас. Це може зайняти кілька секунд через великий обсяг даних...
+            </p>
+            <div className="mt-12 flex gap-2">
+              <div className="w-2 h-2 bg-stone-200 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="w-2 h-2 bg-stone-200 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="w-2 h-2 bg-stone-200 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Navigation */}
       <nav className="sticky top-0 z-40 glass border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -336,6 +396,7 @@ export default function App() {
                 src="https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&q=80&w=1920" 
                 className="w-full h-full object-cover"
                 alt=""
+                referrerPolicy="no-referrer"
               />
             </div>
             <div className="max-w-7xl mx-auto relative z-10 text-center">
@@ -390,56 +451,68 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-              {filteredProducts.map((product) => (
-                <motion.div 
-                  key={product.id}
-                  layoutId={`product-${product.id}`}
-                  onClick={async () => {
-                    setSelectedProduct(product);
-                    setCurrentImageIndex(0);
-                    // Update views in Supabase
-                    if (supabase) {
-                      try {
-                        await supabase
-                          .from('products')
-                          .update({ views: (product.views || 0) + 1 })
-                          .eq('id', product.id);
-                      } catch (err) {
-                        console.error('Error updating views:', err);
+              {isLoadingProducts && products.length === 0 ? (
+                [...Array(8)].map((_, i) => (
+                  <div key={i} className="animate-pulse">
+                    <div className="aspect-square bg-stone-200 rounded-3xl mb-4" />
+                    <div className="h-4 bg-stone-200 rounded w-3/4 mb-2" />
+                    <div className="h-4 bg-stone-200 rounded w-1/2" />
+                  </div>
+                ))
+              ) : (
+                filteredProducts.map((product) => (
+                  <motion.div 
+                    key={product.id}
+                    layoutId={`product-${product.id}`}
+                    onClick={async () => {
+                      setSelectedProduct(product);
+                      setCurrentImageIndex(0);
+                      // Update views in Supabase
+                      if (supabase) {
+                        try {
+                          await supabase
+                            .from('products')
+                            .update({ views: (product.views || 0) + 1 })
+                            .eq('id', product.id);
+                        } catch (err) {
+                          console.error('Error updating views:', err);
+                        }
                       }
-                    }
-                  }}
-                  className="group cursor-pointer"
-                >
-                  <div className="aspect-square rounded-3xl overflow-hidden bg-white mb-4 relative border border-stone-100">
-                    <img 
-                      src={product.images[0] || 'https://picsum.photos/seed/car/800/1000'} 
-                      className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
-                      alt={product.name}
-                    />
-                    {product.is_sale && (
-                      <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
-                        Знижка
+                    }}
+                    className="group cursor-pointer"
+                  >
+                    <div className="aspect-square rounded-3xl overflow-hidden bg-white mb-4 relative border border-stone-100">
+                      <img 
+                        src={product.images[0] || 'https://picsum.photos/seed/car/800/1000'} 
+                        className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
+                        alt={product.name}
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                      />
+                      {product.is_sale && (
+                        <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
+                          Знижка
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
+                          Детальніше
+                        </span>
                       </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
-                        Детальніше
-                      </span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-start mb-1">
-                    <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
-                    <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
-                    {product.is_sale && product.old_price && (
-                      <p className="text-stone-400 font-mono text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                    <div className="flex justify-between items-start mb-1">
+                      <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
+                      <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
+                      {product.is_sale && product.old_price && (
+                        <p className="text-stone-400 font-mono text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
+                      )}
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
           </main>
         </>
@@ -492,7 +565,7 @@ export default function App() {
         <main className="max-w-7xl mx-auto px-4 py-20">
           <div className="bg-stone-900 rounded-[3rem] p-12 text-white mb-20 relative overflow-hidden">
             <div className="absolute inset-0 opacity-10">
-              <img src="https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920" className="w-full h-full object-cover" alt="" />
+              <img src="https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920" className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
             </div>
             <div className="relative z-10 max-w-2xl">
               <h2 className="text-4xl md:text-5xl font-bold mb-6">Продайте свої диски у нас!</h2>
@@ -515,60 +588,66 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {ads.length > 0 ? ads.map((ad) => (
-              <motion.div 
-                key={ad.id} 
-                layoutId={`ad-${ad.id}`}
-                onClick={() => {
-                  if (!ad.is_placeholder) {
-                    setSelectedAd(ad);
-                    setCurrentImageIndex(0);
-                  }
-                }}
-                className={`group bg-white rounded-3xl border border-stone-100 overflow-hidden shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
-              >
-                <div className="aspect-video relative overflow-hidden">
-                  <img 
-                    src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/wheel/800/600'} 
-                    className={`w-full h-full object-cover transition-all duration-500 ${ad.is_placeholder ? 'blur-md scale-110 grayscale' : 'group-hover:scale-110'}`}
-                    alt="" 
-                    referrerPolicy="no-referrer"
-                  />
-                  {ad.is_placeholder && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                      <span className="bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-bold border border-white/30 text-center max-w-[80%]">
-                        Тут може бути ваше оголошення
-                      </span>
-                    </div>
-                  )}
-                  {!ad.is_placeholder && (
-                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
-                        Переглянути
-                      </span>
-                    </div>
-                  )}
+            {isLoadingAds && ads.length === 0 ? (
+              [...Array(6)].map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-video bg-stone-200 rounded-3xl mb-4" />
+                  <div className="h-4 bg-stone-200 rounded w-3/4 mb-2" />
+                  <div className="h-4 bg-stone-200 rounded w-1/2" />
                 </div>
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <h4 className={`font-bold text-xl ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.title}</h4>
-                    <p className={`font-mono font-bold text-stone-900 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.price} грн</p>
+              ))
+            ) : (
+              ads.map((ad) => (
+                <motion.div 
+                  key={ad.id} 
+                  layoutId={`ad-${ad.id}`}
+                  onClick={() => {
+                    if (!ad.is_placeholder) {
+                      setSelectedAd(ad);
+                      setCurrentImageIndex(0);
+                    }
+                  }}
+                  className={`group bg-white rounded-3xl border border-stone-100 overflow-hidden shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
+                >
+                  <div className="aspect-video relative overflow-hidden">
+                    <img 
+                      src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/wheel/800/600'} 
+                      className={`w-full h-full object-cover transition-all duration-500 ${ad.is_placeholder ? 'blur-md scale-110 grayscale' : 'group-hover:scale-110'}`}
+                      alt="" 
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                    />
+                    {ad.is_placeholder && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <span className="bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-bold border border-white/30 text-center max-w-[80%]">
+                          Тут може бути ваше оголошення
+                        </span>
+                      </div>
+                    )}
+                    {!ad.is_placeholder && (
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
+                          Переглянути
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <p className={`text-stone-500 text-sm mb-6 line-clamp-2 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>
-                    {ad.description}
-                  </p>
-                  {!ad.is_placeholder && (
-                    <div className="w-full flex items-center justify-center gap-2 bg-stone-100 py-3 rounded-xl font-bold text-stone-600">
-                      <Phone size={18} /> {ad.phone}
+                  <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <h4 className={`font-bold text-xl ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.title}</h4>
+                      <p className={`font-mono font-bold text-stone-900 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.price} грн</p>
                     </div>
-                  )}
-                </div>
-              </motion.div>
-            )) : (
-              <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-stone-200">
-                <Megaphone className="mx-auto text-stone-300 mb-4" size={48} />
-                <p className="text-stone-500">Наразі оголошень немає. Будьте першим!</p>
-              </div>
+                    <p className={`text-stone-500 text-sm mb-6 line-clamp-2 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>
+                      {ad.description}
+                    </p>
+                    {!ad.is_placeholder && (
+                      <div className="w-full flex items-center justify-center gap-2 bg-stone-100 py-3 rounded-xl font-bold text-stone-600">
+                        <Phone size={18} /> {ad.phone}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ))
             )}
           </div>
         </main>
@@ -1002,6 +1081,21 @@ export default function App() {
           </div>
         </div>
       </footer>
+      {/* Notifications */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 font-medium ${
+              notification.type === 'success' ? 'bg-stone-900 text-white' : 'bg-red-600 text-white'
+            }`}
+          >
+            {notification.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
