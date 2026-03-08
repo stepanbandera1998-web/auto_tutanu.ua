@@ -184,53 +184,62 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
     try {
       let visitsCount = 0;
-      let productsData: any[] = [];
       let totalViews = 0;
       let mostViewed: any[] = [];
       let onlineUsers = 0;
 
-      // 1. Fetch server stats (always reliable for visits and online users)
+      // 1. Try to fetch online users from server (optional, will fail gracefully on static hosts)
       try {
         const res = await fetch(`/api/stats?t=${Date.now()}`);
         if (res.ok) {
           const serverData = await res.json();
-          visitsCount = serverData.totalVisits || 0;
           onlineUsers = serverData.onlineUsers || 0;
-        } else if (res.status === 404) {
-          console.warn('Server stats API not found (404). This is expected on static hosting.');
+          // We still take visits from server if available as a backup
+          visitsCount = serverData.totalVisits || 0;
         }
       } catch (err) {
-        console.warn('Could not fetch stats from server:', err);
+        // Ignore server errors for stats
       }
 
-      // 2. Fetch Supabase stats (for product views and most viewed)
+      // 2. Fetch everything from Supabase (Primary Source)
       if (supabase) {
         try {
-          const { data, error: productsError } = await supabase
+          // Get products for views and most viewed
+          const { data: productsData, error: productsError } = await supabase
             .from('products')
             .select('id, name, views')
             .order('views', { ascending: false });
           
-          if (productsError) throw productsError;
-          productsData = data || [];
-          totalViews = productsData.reduce((acc, p) => acc + (p.views || 0), 0);
-          mostViewed = productsData.slice(0, 5);
-          
-          // If Supabase has its own visit tracking, we can try to get it too
-          try {
-            const { count, error: visitsError } = await supabase
-              .from('stats')
-              .select('*', { count: 'exact', head: true })
-              .eq('type', 'visit');
-            
-            if (!visitsError && count && count > visitsCount) {
-              visitsCount = count;
-            }
-          } catch (e) {
-            // stats table might not exist in Supabase, ignore
+          if (!productsError && productsData) {
+            totalViews = productsData.reduce((acc, p) => acc + (p.views || 0), 0);
+            mostViewed = productsData.slice(0, 5);
           }
+
+          // Explicit count queries as requested
+          const { count: productsCount } = await supabase
+            .from('products')
+            .select('*', { count: 'exact', head: true });
+          
+          const { count: adsCount } = await supabase
+            .from('ads')
+            .select('*', { count: 'exact', head: true });
+
+          console.log(`Supabase counts - Products: ${productsCount}, Ads: ${adsCount}`);
+
+          // Get total visits from Supabase stats table
+          const { count: supabaseVisits, error: visitsError } = await supabase
+            .from('stats')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'visit');
+          
+          if (!visitsError && supabaseVisits !== null) {
+            visitsCount = Math.max(visitsCount, supabaseVisits);
+          }
+
+          // We can also fetch counts for UI if needed, though they are often derived from the main lists
+          // But for the stats object, we have what we need
         } catch (err: any) {
-          console.warn('Could not fetch products for stats from Supabase:', err.message);
+          console.warn('Supabase stats fetch error:', err.message);
         }
       }
       
