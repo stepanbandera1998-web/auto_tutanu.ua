@@ -74,49 +74,58 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     fetchReviews();
     fetchStats();
     
+    // Detect if we are on a static host (like Vercel) where the Node.js server doesn't run
+    const isStaticHost = window.location.hostname.includes('vercel.app');
+    
     // Polling for general stats
     const interval = setInterval(fetchStats, 10000);
     
-    // Socket for real-time online users
-    const socket = io({
-      reconnectionAttempts: 3,
-      timeout: 5000,
-      transports: ['websocket', 'polling']
-    });
-
-    socket.on('presence_update', (count: number) => {
-      console.log('Received presence update:', count);
-      setStats(prev => {
-        if (!prev) {
-          return {
-            totalVisits: 0,
-            totalViews: 0,
-            mostViewed: [],
-            onlineUsers: count
-          };
-        }
-        return { ...prev, onlineUsers: count };
+    let socket: any = null;
+    
+    if (!isStaticHost) {
+      // Socket for real-time online users
+      socket = io({
+        reconnectionAttempts: 3,
+        timeout: 5000,
+        transports: ['websocket', 'polling']
       });
-    });
 
-    socket.on('connect_error', (err) => {
-      console.warn('Socket connection error (expected on static hosts like Vercel):', err.message);
-      setIsSocketConnected(false);
-    });
+      socket.on('presence_update', (count: number) => {
+        console.log('Received presence update:', count);
+        setStats(prev => {
+          if (!prev) {
+            return {
+              totalVisits: 0,
+              totalViews: 0,
+              mostViewed: [],
+              onlineUsers: count
+            };
+          }
+          return { ...prev, onlineUsers: count };
+        });
+      });
 
-    socket.on('connect', () => {
-      console.log('Admin Dashboard socket connected');
-      setIsSocketConnected(true);
-    });
+      socket.on('connect_error', (err: any) => {
+        console.warn('Socket connection error:', err.message);
+        setIsSocketConnected(false);
+      });
 
-    socket.on('disconnect', () => {
-      console.log('Admin Dashboard socket disconnected');
-      setIsSocketConnected(false);
-    });
+      socket.on('connect', () => {
+        console.log('Admin Dashboard socket connected');
+        setIsSocketConnected(true);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Admin Dashboard socket disconnected');
+        setIsSocketConnected(false);
+      });
+    } else {
+      console.log('Static host detected (Vercel). Skipping socket connection.');
+    }
 
     return () => {
       clearInterval(interval);
-      socket.disconnect();
+      if (socket) socket.disconnect();
     };
   }, []);
 
@@ -188,17 +197,21 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       let mostViewed: any[] = [];
       let onlineUsers = 0;
 
-      // 1. Try to fetch online users from server (optional, will fail gracefully on static hosts)
-      try {
-        const res = await fetch(`/api/stats?t=${Date.now()}`);
-        if (res.ok) {
-          const serverData = await res.json();
-          onlineUsers = serverData.onlineUsers || 0;
-          // We still take visits from server if available as a backup
-          visitsCount = serverData.totalVisits || 0;
+      const isStaticHost = window.location.hostname.includes('vercel.app');
+
+      // 1. Try to fetch online users from server (only if not on static host)
+      if (!isStaticHost) {
+        try {
+          const res = await fetch(`/api/stats?t=${Date.now()}`);
+          if (res.ok) {
+            const serverData = await res.json();
+            onlineUsers = serverData.onlineUsers || 0;
+            // We still take visits from server if available as a backup
+            visitsCount = serverData.totalVisits || 0;
+          }
+        } catch (err) {
+          // Ignore server errors for stats
         }
-      } catch (err) {
-        // Ignore server errors for stats
       }
 
       // 2. Fetch everything from Supabase (Primary Source)

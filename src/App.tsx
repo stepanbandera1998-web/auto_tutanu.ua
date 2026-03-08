@@ -112,8 +112,11 @@ export default function App() {
     
     init();
     
-    // Log visit to local server (reliable for mobile)
+    // Log visit to local server (only if not on a static host like Vercel)
     const logVisit = async () => {
+      const isStaticHost = window.location.hostname.includes('vercel.app');
+      if (isStaticHost) return;
+
       try {
         const hasVisited = sessionStorage.getItem('visited');
         if (!hasVisited) {
@@ -496,12 +499,15 @@ export default function App() {
                       setSelectedProduct(product);
                       setCurrentImageIndex(0);
                       
-                      // Log view to local server
-                      fetch('/api/view', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ productId: product.id })
-                      }).catch(err => console.warn('Error logging view to server:', err));
+                      // Log view to local server (only if not on a static host like Vercel)
+                      const isStaticHost = window.location.hostname.includes('vercel.app');
+                      if (!isStaticHost) {
+                        fetch('/api/view', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ productId: product.id })
+                        }).catch(err => console.warn('Error logging view to server:', err));
+                      }
 
                       // Update views in Supabase
                       if (supabase) {
