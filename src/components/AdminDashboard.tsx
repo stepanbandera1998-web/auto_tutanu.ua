@@ -78,7 +78,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     const interval = setInterval(fetchStats, 10000);
     
     // Socket for real-time online users
-    const socket = io();
+    const socket = io({
+      reconnectionAttempts: 3,
+      timeout: 5000,
+      transports: ['websocket', 'polling']
+    });
+
     socket.on('presence_update', (count: number) => {
       console.log('Received presence update:', count);
       setStats(prev => {
@@ -92,6 +97,11 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         }
         return { ...prev, onlineUsers: count };
       });
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('Socket connection error (expected on static hosts like Vercel):', err.message);
+      setIsSocketConnected(false);
     });
 
     socket.on('connect', () => {
@@ -186,6 +196,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           const serverData = await res.json();
           visitsCount = serverData.totalVisits || 0;
           onlineUsers = serverData.onlineUsers || 0;
+        } else if (res.status === 404) {
+          console.warn('Server stats API not found (404). This is expected on static hosting.');
         }
       } catch (err) {
         console.warn('Could not fetch stats from server:', err);

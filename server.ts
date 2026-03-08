@@ -21,6 +21,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_stats_product_id ON stats(product_id);
 `);
 
+// Migration: Add product_id if it doesn't exist (for existing databases)
+try {
+  db.prepare("SELECT product_id FROM stats LIMIT 1").get();
+} catch (e) {
+  console.log("Adding product_id column to stats table...");
+  db.exec("ALTER TABLE stats ADD COLUMN product_id INTEGER");
+}
+
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
