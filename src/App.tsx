@@ -23,7 +23,6 @@ import { MultiSpokeLogo } from './components/MultiSpokeLogo';
 import { Product, Review, Ad } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import AdminDashboard from './components/AdminDashboard';
-import { io } from 'socket.io-client';
 import { format } from 'date-fns';
 import { uk } from 'date-fns/locale';
 import { supabase } from './services/supabase';
@@ -153,18 +152,7 @@ export default function App() {
     };
     document.addEventListener('contextmenu', handleContextMenu);
 
-    const socket = io();
-    
-    socket.on('connect', () => {
-      console.log('Socket connected:', socket.id);
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-    });
-
     return () => { 
-      socket.disconnect(); 
       document.removeEventListener('contextmenu', handleContextMenu);
     };
   }, []);

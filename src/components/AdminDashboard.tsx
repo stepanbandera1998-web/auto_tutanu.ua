@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { Product, Stats, Ad, Review } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { io } from 'socket.io-client';
 import { 
   BarChart, 
   Bar, 
@@ -43,7 +42,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats'>('products');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -74,58 +72,11 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     fetchReviews();
     fetchStats();
     
-    // Detect if we are on a static host (like Vercel) where the Node.js server doesn't run
-    const isStaticHost = window.location.hostname.includes('vercel.app');
-    
     // Polling for general stats
     const interval = setInterval(fetchStats, 10000);
     
-    let socket: any = null;
-    
-    if (!isStaticHost) {
-      // Socket for real-time online users
-      socket = io({
-        reconnectionAttempts: 3,
-        timeout: 5000,
-        transports: ['websocket', 'polling']
-      });
-
-      socket.on('presence_update', (count: number) => {
-        console.log('Received presence update:', count);
-        setStats(prev => {
-          if (!prev) {
-            return {
-              totalVisits: 0,
-              totalViews: 0,
-              mostViewed: [],
-              onlineUsers: count
-            };
-          }
-          return { ...prev, onlineUsers: count };
-        });
-      });
-
-      socket.on('connect_error', (err: any) => {
-        console.warn('Socket connection error:', err.message);
-        setIsSocketConnected(false);
-      });
-
-      socket.on('connect', () => {
-        console.log('Admin Dashboard socket connected');
-        setIsSocketConnected(true);
-      });
-
-      socket.on('disconnect', () => {
-        console.log('Admin Dashboard socket disconnected');
-        setIsSocketConnected(false);
-      });
-    } else {
-      console.log('Static host detected (Vercel). Skipping socket connection.');
-    }
-
     return () => {
       clearInterval(interval);
-      if (socket) socket.disconnect();
     };
   }, []);
 
@@ -195,26 +146,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       let visitsCount = 0;
       let totalViews = 0;
       let mostViewed: any[] = [];
-      let onlineUsers = 0;
 
-      const isStaticHost = window.location.hostname.includes('vercel.app');
-
-      // 1. Try to fetch online users from server (only if not on static host)
-      if (!isStaticHost) {
-        try {
-          const res = await fetch(`/api/stats?t=${Date.now()}`);
-          if (res.ok) {
-            const serverData = await res.json();
-            onlineUsers = serverData.onlineUsers || 0;
-            // We still take visits from server if available as a backup
-            visitsCount = serverData.totalVisits || 0;
-          }
-        } catch (err) {
-          // Ignore server errors for stats
-        }
-      }
-
-      // 2. Fetch everything from Supabase (Primary Source)
+      // Fetch everything from Supabase (Primary Source)
       if (supabase) {
         try {
           // Get products for views and most viewed
@@ -228,17 +161,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             mostViewed = productsData.slice(0, 5);
           }
 
-          // Explicit count queries as requested
-          const { count: productsCount } = await supabase
-            .from('products')
-            .select('*', { count: 'exact', head: true });
-          
-          const { count: adsCount } = await supabase
-            .from('ads')
-            .select('*', { count: 'exact', head: true });
-
-          console.log(`Supabase counts - Products: ${productsCount}, Ads: ${adsCount}`);
-
           // Get total visits from Supabase stats table
           const { count: supabaseVisits, error: visitsError } = await supabase
             .from('stats')
@@ -246,11 +168,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             .eq('type', 'visit');
           
           if (!visitsError && supabaseVisits !== null) {
-            visitsCount = Math.max(visitsCount, supabaseVisits);
+            visitsCount = supabaseVisits;
           }
-
-          // We can also fetch counts for UI if needed, though they are often derived from the main lists
-          // But for the stats object, we have what we need
         } catch (err: any) {
           console.warn('Supabase stats fetch error:', err.message);
         }
@@ -260,7 +179,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         totalVisits: visitsCount,
         totalViews: totalViews,
         mostViewed: mostViewed,
-        onlineUsers: onlineUsers
+        onlineUsers: 0 // No longer tracking real-time online users without sockets
       });
       
       if (isManual) {
@@ -1069,10 +988,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <div className={`w-1.5 h-1.5 rounded-full ${supabase ? 'bg-emerald-500' : 'bg-red-500'}`} />
                   {supabase ? 'Supabase: Підключено' : 'Supabase: Помилка'}
                 </div>
-                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${isSocketConnected ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${isSocketConnected ? 'bg-blue-500' : 'bg-amber-500'}`} />
-                  {isSocketConnected ? 'Live: Активно' : 'Live: Очікування'}
-                </div>
                 <button 
                   onClick={() => fetchStats(true)}
                   disabled={isRefreshingStats}
@@ -1084,22 +999,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
-                    <Users size={24} />
-                  </div>
-                  <div>
-                    <p className="text-sm text-stone-500">Зараз на сайті</p>
-                    <p className="text-3xl font-bold">{stats?.onlineUsers || 0}</p>
-                  </div>
-                </div>
-                <div className="h-1 w-full bg-stone-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 w-1/3 animate-pulse" />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">

@@ -1,7 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
@@ -31,10 +30,6 @@ try {
 
 async function startServer() {
   const app = express();
-  const httpServer = createServer(app);
-  const io = new Server(httpServer, {
-    cors: { origin: "*" }
-  });
 
   app.use(express.json({ limit: '100mb' }));
 
@@ -60,23 +55,11 @@ async function startServer() {
     }
   });
 
-  // Real-time presence
-  io.on("connection", (socket) => {
-    console.log(`Client connected: ${socket.id}. Total: ${io.sockets.sockets.size}`);
-    io.emit("presence_update", io.sockets.sockets.size);
-    
-    socket.on("disconnect", () => {
-      console.log(`Client disconnected: ${socket.id}. Total: ${io.sockets.sockets.size}`);
-      io.emit("presence_update", io.sockets.sockets.size);
-    });
-  });
-
   // API Routes
   app.get("/api/stats", (req, res) => {
     try {
       const totalVisits = db.prepare("SELECT COUNT(*) as count FROM stats WHERE type = 'visit'").get()?.count || 0;
       const totalViews = db.prepare("SELECT COUNT(*) as count FROM stats WHERE type = 'view'").get()?.count || 0;
-      const onlineUsers = io.sockets.sockets.size;
       
       // Get most viewed products from local stats
       const mostViewed = db.prepare(`
@@ -88,11 +71,10 @@ async function startServer() {
         LIMIT 5
       `).all();
       
-      console.log(`Stats API called. Online users: ${onlineUsers}`);
-      res.json({ totalVisits, totalViews, mostViewed, onlineUsers });
+      res.json({ totalVisits, totalViews, mostViewed, onlineUsers: 0 });
     } catch (error) {
       console.error("Error fetching stats from SQLite:", error);
-      res.status(500).json({ error: "Internal server error", onlineUsers: io.sockets.sockets.size });
+      res.status(500).json({ error: "Internal server error", onlineUsers: 0 });
     }
   });
 
@@ -108,7 +90,7 @@ async function startServer() {
     app.get("*", (req, res) => res.sendFile(path.resolve("dist/index.html")));
   }
 
-  httpServer.listen(3000, "0.0.0.0", () => {
+  app.listen(3000, "0.0.0.0", () => {
     console.log("Server running on http://localhost:3000");
   });
 }
