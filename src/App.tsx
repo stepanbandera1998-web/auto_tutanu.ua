@@ -111,17 +111,36 @@ export default function App() {
     };
     
     init();
+    
+    // Log visit to local server (reliable for mobile)
+    const logVisit = async () => {
+      try {
+        const hasVisited = sessionStorage.getItem('visited');
+        if (!hasVisited) {
+          await fetch('/api/visit', { method: 'POST' });
+          sessionStorage.setItem('visited', 'true');
+        }
+      } catch (err) {
+        console.warn('Could not log visit to server:', err);
+      }
+    };
+    logVisit();
 
     // Log visit to Supabase
     if (supabase) {
-      supabase.from('stats').insert([{ type: 'visit' }]).then(({ error }) => {
-        if (error) {
-          // Only log if it's not a missing table error to avoid console clutter
-          if (!error.message?.includes('relation') || !error.message?.includes('does not exist')) {
-            console.error('Error logging visit to Supabase:', error);
+      const hasVisitedSupabase = sessionStorage.getItem('visited_supabase');
+      if (!hasVisitedSupabase) {
+        supabase.from('stats').insert([{ type: 'visit' }]).then(({ error }) => {
+          if (!error) {
+            sessionStorage.setItem('visited_supabase', 'true');
+          } else {
+            // Only log if it's not a missing table error to avoid console clutter
+            if (!error.message?.includes('relation') || !error.message?.includes('does not exist')) {
+              console.error('Error logging visit to Supabase:', error);
+            }
           }
-        }
-      });
+        });
+      }
     }
 
     const handleContextMenu = (e: MouseEvent) => {
@@ -132,6 +151,15 @@ export default function App() {
     document.addEventListener('contextmenu', handleContextMenu);
 
     const socket = io();
+    
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
+
     return () => { 
       socket.disconnect(); 
       document.removeEventListener('contextmenu', handleContextMenu);
@@ -286,7 +314,7 @@ export default function App() {
             className="fixed inset-0 z-[200] bg-white flex flex-col items-center justify-center p-6 text-center"
           >
             <div className="w-16 h-16 border-4 border-stone-100 border-t-stone-900 rounded-full animate-spin mb-8" />
-            <h2 className="text-2xl font-bold mb-2">Завантаження Auto Tutanu</h2>
+            <h2 className="text-2xl font-bold mb-2">Завантаження auto_tutanu.ua</h2>
             <p className="text-stone-500 max-w-xs">
               Ми готуємо каталог для вас. Це може зайняти кілька секунд через великий обсяг даних...
             </p>
@@ -467,6 +495,14 @@ export default function App() {
                     onClick={async () => {
                       setSelectedProduct(product);
                       setCurrentImageIndex(0);
+                      
+                      // Log view to local server
+                      fetch('/api/view', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ productId: product.id })
+                      }).catch(err => console.warn('Error logging view to server:', err));
+
                       // Update views in Supabase
                       if (supabase) {
                         try {

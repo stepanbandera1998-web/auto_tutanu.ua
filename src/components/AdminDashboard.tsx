@@ -13,10 +13,13 @@ import {
   X,
   Megaphone,
   Star,
-  MessageSquare
+  MessageSquare,
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 import { Product, Stats, Ad, Review } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { io } from 'socket.io-client';
 import { 
   BarChart, 
   Bar, 
@@ -40,6 +43,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats'>('products');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
@@ -61,13 +66,48 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     is_placeholder: false
   });
 
+  const [isRefreshingStats, setIsRefreshingStats] = useState(false);
+
   useEffect(() => {
     fetchProducts();
     fetchAds();
     fetchReviews();
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
-    return () => clearInterval(interval);
+    
+    // Polling for general stats
+    const interval = setInterval(fetchStats, 10000);
+    
+    // Socket for real-time online users
+    const socket = io();
+    socket.on('presence_update', (count: number) => {
+      console.log('Received presence update:', count);
+      setStats(prev => {
+        if (!prev) {
+          return {
+            totalVisits: 0,
+            totalViews: 0,
+            mostViewed: [],
+            onlineUsers: count
+          };
+        }
+        return { ...prev, onlineUsers: count };
+      });
+    });
+
+    socket.on('connect', () => {
+      console.log('Admin Dashboard socket connected');
+      setIsSocketConnected(true);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Admin Dashboard socket disconnected');
+      setIsSocketConnected(false);
+    });
+
+    return () => {
+      clearInterval(interval);
+      socket.disconnect();
+    };
   }, []);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -127,53 +167,59 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const fetchStats = async () => {
+  const fetchStats = async (isManual = false) => {
+    if (isManual) {
+      console.log('fetchStats called manually');
+      setIsRefreshingStats(true);
+    }
     try {
-      if (!supabase) throw new Error('Supabase not configured');
-      
       let visitsCount = 0;
       let productsData: any[] = [];
       let totalViews = 0;
       let mostViewed: any[] = [];
-
-      // Fetch products for views and most viewed
-      try {
-        const { data, error: productsError } = await supabase
-          .from('products')
-          .select('id, name, views')
-          .order('views', { ascending: false });
-        
-        if (productsError) throw productsError;
-        productsData = data || [];
-        totalViews = productsData.reduce((acc, p) => acc + (p.views || 0), 0);
-        mostViewed = productsData.slice(0, 5);
-      } catch (err: any) {
-        console.warn('Could not fetch products for stats:', err.message);
-      }
-      
-      // Fetch total visits from stats table
-      try {
-        const { count, error: visitsError } = await supabase
-          .from('stats')
-          .select('*', { count: 'exact', head: true })
-          .eq('type', 'visit');
-        
-        if (visitsError) throw visitsError;
-        visitsCount = count || 0;
-      } catch (err: any) {
-        console.warn('Could not fetch visits from Supabase stats table:', err.message);
-      }
-
-      // For online users, we still use the server socket
       let onlineUsers = 0;
+
+      // 1. Fetch server stats (always reliable for visits and online users)
       try {
-        const res = await fetch('/api/stats');
+        const res = await fetch(`/api/stats?t=${Date.now()}`);
         if (res.ok) {
           const serverData = await res.json();
-          onlineUsers = serverData.onlineUsers;
+          visitsCount = serverData.totalVisits || 0;
+          onlineUsers = serverData.onlineUsers || 0;
         }
       } catch (err) {
-        console.warn('Could not fetch online users from server:', err);
+        console.warn('Could not fetch stats from server:', err);
+      }
+
+      // 2. Fetch Supabase stats (for product views and most viewed)
+      if (supabase) {
+        try {
+          const { data, error: productsError } = await supabase
+            .from('products')
+            .select('id, name, views')
+            .order('views', { ascending: false });
+          
+          if (productsError) throw productsError;
+          productsData = data || [];
+          totalViews = productsData.reduce((acc, p) => acc + (p.views || 0), 0);
+          mostViewed = productsData.slice(0, 5);
+          
+          // If Supabase has its own visit tracking, we can try to get it too
+          try {
+            const { count, error: visitsError } = await supabase
+              .from('stats')
+              .select('*', { count: 'exact', head: true })
+              .eq('type', 'visit');
+            
+            if (!visitsError && count && count > visitsCount) {
+              visitsCount = count;
+            }
+          } catch (e) {
+            // stats table might not exist in Supabase, ignore
+          }
+        } catch (err: any) {
+          console.warn('Could not fetch products for stats from Supabase:', err.message);
+        }
       }
       
       setStats({
@@ -182,29 +228,23 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         mostViewed: mostViewed,
         onlineUsers: onlineUsers
       });
+      
+      if (isManual) {
+        showNotification('Статистику оновлено');
+      }
     } catch (error) {
-      console.error('Error fetching stats:', error);
-      // Fallback to server stats if Supabase fails
-      try {
-        const res = await fetch('/api/stats');
-        if (res.ok) {
-          const data = await res.json();
-          setStats({
-            totalVisits: data.totalVisits || 0,
-            totalViews: data.totalViews || 0,
-            mostViewed: data.mostViewed || [],
-            onlineUsers: data.onlineUsers || 0
-          });
-        }
-      } catch (e) {
-        console.error('Full stats failure:', e);
+      console.error('Error in fetchStats:', error);
+      if (isManual) {
+        showNotification('Помилка при оновленні статистики', 'error');
+      }
+    } finally {
+      if (isManual) {
+        setIsRefreshingStats(false);
       }
     }
   };
 
   const [isGenerating, setIsGenerating] = useState(false);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -988,6 +1028,28 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         {activeView === 'stats' && (
           <div className="space-y-8">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Статистика магазину</h2>
+              <div className="flex items-center gap-4">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${supabase ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${supabase ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  {supabase ? 'Supabase: Підключено' : 'Supabase: Помилка'}
+                </div>
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${isSocketConnected ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${isSocketConnected ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                  {isSocketConnected ? 'Live: Активно' : 'Live: Очікування'}
+                </div>
+                <button 
+                  onClick={() => fetchStats(true)}
+                  disabled={isRefreshingStats}
+                  className={`p-2 transition-colors bg-white rounded-xl border border-stone-200 ${isRefreshingStats ? 'text-stone-300 cursor-not-allowed' : 'text-stone-400 hover:text-stone-900'}`}
+                  title="Оновити статистику"
+                >
+                  <RefreshCw size={20} className={isRefreshingStats ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
                 <div className="flex items-center gap-4 mb-4">
@@ -1109,6 +1171,45 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <p className="text-[10px] text-stone-400 mt-2 text-center">
                     Це стисне всі існуючі фото в базі даних для пришвидшення завантаження сайту.
                   </p>
+                </div>
+
+                <div className="pt-8 border-t border-stone-100 mt-8">
+                  <h4 className="font-bold mb-4 flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-stone-400" />
+                    Налаштування бази даних (SQL)
+                  </h4>
+                  <p className="text-xs text-stone-500 mb-4">
+                    Якщо статистика показує 0, можливо у вашому Supabase відсутні необхідні таблиці або колонки. 
+                    Скопіюйте цей код і виконайте його в <b>SQL Editor</b> у вашому Supabase Dashboard:
+                  </p>
+                  <div className="bg-stone-900 rounded-xl p-4 overflow-x-auto">
+                    <pre className="text-[10px] text-stone-300 font-mono leading-relaxed">
+{`-- 1. Додати колонку views до товарів
+ALTER TABLE products ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;
+
+-- 2. Створити таблицю статистики
+CREATE TABLE IF NOT EXISTS stats (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  type TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- 3. Дозволити всім додавати візити (публічно)
+ALTER TABLE stats ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public insert to stats" ON stats FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
+                    </pre>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const sql = `-- 1. Додати колонку views до товарів\nALTER TABLE products ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;\n\n-- 2. Створити таблицю статистики\nCREATE TABLE IF NOT EXISTS stats (\n  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,\n  type TEXT NOT NULL,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL\n);\n\n-- 3. Дозволити всім додавати візити (публічно)\nALTER TABLE stats ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow public insert to stats" ON stats FOR INSERT WITH CHECK (true);\nCREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`;
+                      navigator.clipboard.writeText(sql);
+                      showNotification('SQL код скопійовано!');
+                    }}
+                    className="w-full mt-4 text-xs bg-stone-100 text-stone-600 py-2 rounded-lg hover:bg-stone-200 transition-all font-medium"
+                  >
+                    Копіювати SQL код
+                  </button>
                 </div>
               </div>
             </div>

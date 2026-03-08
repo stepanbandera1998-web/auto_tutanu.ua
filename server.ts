@@ -17,6 +17,8 @@ db.exec(`
     product_id INTEGER,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE INDEX IF NOT EXISTS idx_stats_type ON stats(type);
+  CREATE INDEX IF NOT EXISTS idx_stats_product_id ON stats(product_id);
 `);
 
 async function startServer() {
@@ -28,29 +30,62 @@ async function startServer() {
 
   app.use(express.json({ limit: '100mb' }));
 
-  // Real-time presence
-  let onlineUsers = 0;
-  io.on("connection", (socket) => {
-    onlineUsers++;
-    io.emit("presence_update", onlineUsers);
-    
-    // Log visit
-    db.prepare("INSERT INTO stats (type) VALUES (?)").run("visit");
+  // API to log visit (more reliable than socket for mobile)
+  app.post("/api/visit", (req, res) => {
+    try {
+      db.prepare("INSERT INTO stats (type) VALUES (?)").run("visit");
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Error logging visit via API:", e);
+      res.status(500).json({ error: "Failed to log visit" });
+    }
+  });
 
+  app.post("/api/view", (req, res) => {
+    try {
+      const { productId } = req.body;
+      db.prepare("INSERT INTO stats (type, product_id) VALUES (?, ?)").run("view", productId);
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Error logging view via API:", e);
+      res.status(500).json({ error: "Failed to log view" });
+    }
+  });
+
+  // Real-time presence
+  io.on("connection", (socket) => {
+    console.log(`Client connected: ${socket.id}. Total: ${io.sockets.sockets.size}`);
+    io.emit("presence_update", io.sockets.sockets.size);
+    
     socket.on("disconnect", () => {
-      onlineUsers--;
-      io.emit("presence_update", onlineUsers);
+      console.log(`Client disconnected: ${socket.id}. Total: ${io.sockets.sockets.size}`);
+      io.emit("presence_update", io.sockets.sockets.size);
     });
   });
 
   // API Routes
   app.get("/api/stats", (req, res) => {
-    const totalVisits = db.prepare("SELECT COUNT(*) as count FROM stats WHERE type = 'visit'").get().count;
-    const totalViews = db.prepare("SELECT COUNT(*) as count FROM stats WHERE type = 'view'").get().count;
-    
-    // Note: products views are now handled in Supabase, but we can still show a placeholder or 
-    // fetch from Supabase if needed. For now, we'll return empty mostViewed to keep it simple.
-    res.json({ totalVisits, totalViews, mostViewed: [], onlineUsers });
+    try {
+      const totalVisits = db.prepare("SELECT COUNT(*) as count FROM stats WHERE type = 'visit'").get()?.count || 0;
+      const totalViews = db.prepare("SELECT COUNT(*) as count FROM stats WHERE type = 'view'").get()?.count || 0;
+      const onlineUsers = io.sockets.sockets.size;
+      
+      // Get most viewed products from local stats
+      const mostViewed = db.prepare(`
+        SELECT product_id as id, COUNT(*) as views 
+        FROM stats 
+        WHERE type = 'view' AND product_id IS NOT NULL 
+        GROUP BY product_id 
+        ORDER BY views DESC 
+        LIMIT 5
+      `).all();
+      
+      console.log(`Stats API called. Online users: ${onlineUsers}`);
+      res.json({ totalVisits, totalViews, mostViewed, onlineUsers });
+    } catch (error) {
+      console.error("Error fetching stats from SQLite:", error);
+      res.status(500).json({ error: "Internal server error", onlineUsers: io.sockets.sockets.size });
+    }
   });
 
   // Vite middleware
