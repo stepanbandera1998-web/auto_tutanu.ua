@@ -837,6 +837,7 @@ export default function App() {
                 <a 
                   href={WHATSAPP_LINK}
                   target="_blank"
+                  onClick={() => (window as any).logClick?.('ad_whatsapp')}
                   className="w-full flex items-center justify-center gap-3 bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all"
                 >
                   <MessageCircle size={24} /> Зв'язатись у WhatsApp
@@ -844,6 +845,7 @@ export default function App() {
                 <a 
                   href={TELEGRAM_LINK}
                   target="_blank"
+                  onClick={() => (window as any).logClick?.('ad_telegram')}
                   className="w-full flex items-center justify-center gap-3 bg-[#229ED9] text-white py-4 rounded-2xl font-bold hover:bg-[#1d89bc] transition-all"
                 >
                   <Send size={24} /> Зв'язатись у Telegram
@@ -1024,6 +1026,7 @@ export default function App() {
                     <a 
                       href={TELEGRAM_LINK}
                       target="_blank"
+                      onClick={() => (window as any).logClick?.('contact_telegram')}
                       className="flex items-center justify-center gap-2 sm:gap-3 bg-[#229ED9] text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold hover:bg-[#1d89bc] transition-all text-sm sm:text-base"
                     >
                       <Send size={18} className="sm:w-5 sm:h-5" /> Telegram
@@ -1031,6 +1034,7 @@ export default function App() {
                     <a 
                       href={WHATSAPP_LINK}
                       target="_blank"
+                      onClick={() => (window as any).logClick?.('contact_whatsapp')}
                       className="flex items-center justify-center gap-2 sm:gap-3 bg-emerald-500 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold hover:bg-emerald-600 transition-all text-sm sm:text-base"
                     >
                       <MessageCircle size={18} className="sm:w-5 sm:h-5" /> WhatsApp
@@ -1039,6 +1043,7 @@ export default function App() {
                   <div className="grid grid-cols-1">
                     <a 
                       href={`tel:${PHONE_NUMBER}`}
+                      onClick={() => (window as any).logClick?.('contact_call')}
                       className="flex items-center justify-center gap-2 sm:gap-3 bg-stone-900 text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-bold hover:bg-stone-800 transition-all text-sm sm:text-base"
                     >
                       <Phone size={18} className="sm:w-5 sm:h-5" /> Зателефонувати

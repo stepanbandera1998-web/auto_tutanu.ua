@@ -15,7 +15,10 @@ import {
   Star,
   MessageSquare,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Phone,
+  Send,
+  MessageCircle
 } from 'lucide-react';
 import { Product, Stats, Ad, Review } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1143,6 +1146,35 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         <div className="flex flex-col items-end">
                           <span className="text-lg font-bold text-stone-900">{count}</span>
                           <span className="text-[10px] text-stone-400 uppercase tracking-wider">кліків</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-xl font-bold mb-8">Статистика контактів</h3>
+                <div className="space-y-4">
+                  {[
+                    { id: 'contact_telegram', name: 'Telegram (Товари)', icon: Send, color: 'text-[#229ED9]', bg: 'bg-blue-50' },
+                    { id: 'contact_whatsapp', name: 'WhatsApp (Товари)', icon: MessageCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                    { id: 'contact_call', name: 'Зателефонувати', icon: Phone, color: 'text-stone-900', bg: 'bg-stone-100' },
+                    { id: 'ad_telegram', name: 'Telegram (Оголошення)', icon: Send, color: 'text-[#229ED9]', bg: 'bg-blue-50' },
+                    { id: 'ad_whatsapp', name: 'WhatsApp (Оголошення)', icon: MessageCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                  ].map((item) => {
+                    const count = stats?.clicks?.[item.id] || 0;
+                    return (
+                      <div key={item.id} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 ${item.bg} ${item.color} rounded-lg`}>
+                            <item.icon size={18} />
+                          </div>
+                          <span className="font-medium text-stone-700">{item.name}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-lg font-bold text-stone-900">{count}</span>
+                          <span className="text-[10px] text-stone-400 uppercase tracking-wider">запитів</span>
                         </div>
                       </div>
                     );
