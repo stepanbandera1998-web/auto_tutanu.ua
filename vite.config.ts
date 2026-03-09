@@ -16,6 +16,12 @@ export default defineConfig(({mode}) => {
       },
     },
     build: {
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          evaluate: false,
+        },
+      },
       sourcemap: false,
       modulePreload: {
         polyfill: false,
