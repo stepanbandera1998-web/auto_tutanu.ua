@@ -197,6 +197,49 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  const handleResetStats = async () => {
+    showConfirm('Ви впевнені, що хочете обнулити всю статистику? Це дію неможливо скасувати.', async () => {
+      setIsRefreshingStats(true);
+      try {
+        if (!supabase) throw new Error('Supabase not configured');
+
+        console.log('Resetting product views...');
+        // 1. Reset product views
+        const { error: pError } = await supabase
+          .from('products')
+          .update({ views: 0 })
+          .neq('id', 0); // Use a filter that matches all numeric IDs
+
+        if (pError) {
+          console.error('Product views reset error:', pError);
+          throw new Error(`Помилка скидання переглядів товарів: ${pError.message}`);
+        }
+
+        console.log('Deleting visit stats...');
+        // 2. Delete all visit stats
+        // We use a broad filter to ensure we target all visit records
+        const { error: sError } = await supabase
+          .from('stats')
+          .delete()
+          .match({ type: 'visit' });
+
+        if (sError) {
+          console.error('Visit stats delete error:', sError);
+          throw new Error(`Помилка видалення візитів: ${sError.message}`);
+        }
+
+        showNotification('Статистику обнулено успішно');
+        // Wait a bit before fetching to allow DB to settle
+        setTimeout(() => fetchStats(), 500);
+      } catch (error: any) {
+        console.error('Error resetting stats:', error);
+        showNotification(error.message || 'Помилка при обнуленні статистики', 'error');
+      } finally {
+        setIsRefreshingStats(false);
+      }
+    });
+  };
+
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -652,16 +695,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="admin-card flex items-center gap-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-              <Users size={24} />
-            </div>
-            <div>
-              <p className="text-sm text-stone-500">Зараз на сайті</p>
-              <p className="text-2xl font-bold">{stats?.onlineUsers || 0}</p>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <div className="admin-card flex items-center gap-4">
             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
               <TrendingUp size={24} />
@@ -989,10 +1023,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   {supabase ? 'Supabase: Підключено' : 'Supabase: Помилка'}
                 </div>
                 <button 
-                  onClick={() => fetchStats(true)}
+                  onClick={handleResetStats}
                   disabled={isRefreshingStats}
-                  className={`p-2 transition-colors bg-white rounded-xl border border-stone-200 ${isRefreshingStats ? 'text-stone-300 cursor-not-allowed' : 'text-stone-400 hover:text-stone-900'}`}
-                  title="Оновити статистику"
+                  className={`p-2 transition-colors bg-white rounded-xl border border-stone-200 ${isRefreshingStats ? 'text-stone-300 cursor-not-allowed' : 'text-stone-400 hover:text-red-600'}`}
+                  title="Обнулити статистику"
                 >
                   <RefreshCw size={20} className={isRefreshingStats ? 'animate-spin' : ''} />
                 </button>
@@ -1105,45 +1139,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <p className="text-[10px] text-stone-400 mt-2 text-center">
                     Це стисне всі існуючі фото в базі даних для пришвидшення завантаження сайту.
                   </p>
-                </div>
-
-                <div className="pt-8 border-t border-stone-100 mt-8">
-                  <h4 className="font-bold mb-4 flex items-center gap-2">
-                    <ShieldCheck size={18} className="text-stone-400" />
-                    Налаштування бази даних (SQL)
-                  </h4>
-                  <p className="text-xs text-stone-500 mb-4">
-                    Якщо статистика показує 0, можливо у вашому Supabase відсутні необхідні таблиці або колонки. 
-                    Скопіюйте цей код і виконайте його в <b>SQL Editor</b> у вашому Supabase Dashboard:
-                  </p>
-                  <div className="bg-stone-900 rounded-xl p-4 overflow-x-auto">
-                    <pre className="text-[10px] text-stone-300 font-mono leading-relaxed">
-{`-- 1. Додати колонку views до товарів
-ALTER TABLE products ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;
-
--- 2. Створити таблицю статистики
-CREATE TABLE IF NOT EXISTS stats (
-  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-  type TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
--- 3. Дозволити всім додавати візити (публічно)
-ALTER TABLE stats ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public insert to stats" ON stats FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
-                    </pre>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      const sql = `-- 1. Додати колонку views до товарів\nALTER TABLE products ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0;\n\n-- 2. Створити таблицю статистики\nCREATE TABLE IF NOT EXISTS stats (\n  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,\n  type TEXT NOT NULL,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL\n);\n\n-- 3. Дозволити всім додавати візити (публічно)\nALTER TABLE stats ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow public insert to stats" ON stats FOR INSERT WITH CHECK (true);\nCREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`;
-                      navigator.clipboard.writeText(sql);
-                      showNotification('SQL код скопійовано!');
-                    }}
-                    className="w-full mt-4 text-xs bg-stone-100 text-stone-600 py-2 rounded-lg hover:bg-stone-200 transition-all font-medium"
-                  >
-                    Копіювати SQL код
-                  </button>
                 </div>
               </div>
             </div>
