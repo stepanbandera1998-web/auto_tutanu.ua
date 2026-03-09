@@ -16,6 +16,7 @@ export interface Stats {
   totalViews: number;
   mostViewed: { id: number; name: string; views: number }[];
   onlineUsers: number;
+  clicks?: { [key: string]: number };
 }
 
 export interface Review {

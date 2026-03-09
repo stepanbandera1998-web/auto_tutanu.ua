@@ -128,6 +128,17 @@ export default function App() {
     };
     logVisit();
 
+    const logClick = async (type: string) => {
+      if (supabase) {
+        try {
+          await supabase.from('stats').insert([{ type: `click_${type}` }]);
+        } catch (err) {
+          console.warn(`Error logging click ${type}:`, err);
+        }
+      }
+    };
+    (window as any).logClick = logClick;
+
     // Log visit to Supabase
     if (supabase) {
       const hasVisitedSupabase = sessionStorage.getItem('visited_supabase');
@@ -326,26 +337,26 @@ export default function App() {
             </div>
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
               <button 
-                onClick={() => setActiveTab('catalog')}
+                onClick={() => { setActiveTab('catalog'); (window as any).logClick?.('catalog'); }}
                 className={`hover:text-stone-900 transition-colors ${activeTab === 'catalog' ? 'text-stone-900 font-bold' : ''}`}
               >
                 Каталог
               </button>
               <button 
-                onClick={() => setActiveTab('reviews')}
+                onClick={() => { setActiveTab('reviews'); (window as any).logClick?.('reviews'); }}
                 className={`hover:text-stone-900 transition-colors ${activeTab === 'reviews' ? 'text-stone-900 font-bold' : ''}`}
               >
                 Відгуки
               </button>
               <button 
-                onClick={() => setActiveTab('ads')}
+                onClick={() => { setActiveTab('ads'); (window as any).logClick?.('ads'); }}
                 className={`hover:text-stone-900 transition-colors ${activeTab === 'ads' ? 'text-stone-900 font-bold' : ''}`}
               >
                 Оголошення
               </button>
-              <a href={INSTAGRAM_LINK} target="_blank" className="hover:text-stone-900 transition-colors">Instagram</a>
-              <a href={TIKTOK_LINK} target="_blank" className="hover:text-stone-900 transition-colors">TikTok</a>
-              <a href={FACEBOOK_LINK} target="_blank" className="hover:text-stone-900 transition-colors">Facebook</a>
+              <a href={INSTAGRAM_LINK} target="_blank" onClick={() => (window as any).logClick?.('instagram')} className="hover:text-stone-900 transition-colors">Instagram</a>
+              <a href={TIKTOK_LINK} target="_blank" onClick={() => (window as any).logClick?.('tiktok')} className="hover:text-stone-900 transition-colors">TikTok</a>
+              <a href={FACEBOOK_LINK} target="_blank" onClick={() => (window as any).logClick?.('facebook')} className="hover:text-stone-900 transition-colors">Facebook</a>
             </div>
           </div>
 
@@ -396,12 +407,12 @@ export default function App() {
               className="md:hidden bg-white border-b border-stone-200 overflow-hidden"
             >
               <div className="px-4 py-6 flex flex-col gap-4">
-                <button onClick={() => { setActiveTab('catalog'); setIsMenuOpen(false); }} className="text-left font-medium">Каталог</button>
-                <button onClick={() => { setActiveTab('reviews'); setIsMenuOpen(false); }} className="text-left font-medium">Відгуки</button>
-                <button onClick={() => { setActiveTab('ads'); setIsMenuOpen(false); }} className="text-left font-medium">Оголошення</button>
-                <a href={INSTAGRAM_LINK} target="_blank" className="font-medium">Instagram</a>
-                <a href={TIKTOK_LINK} target="_blank" className="font-medium">TikTok</a>
-                <a href={FACEBOOK_LINK} target="_blank" className="font-medium">Facebook</a>
+                <button onClick={() => { setActiveTab('catalog'); setIsMenuOpen(false); (window as any).logClick?.('catalog_mobile'); }} className="text-left font-medium">Каталог</button>
+                <button onClick={() => { setActiveTab('reviews'); setIsMenuOpen(false); (window as any).logClick?.('reviews_mobile'); }} className="text-left font-medium">Відгуки</button>
+                <button onClick={() => { setActiveTab('ads'); setIsMenuOpen(false); (window as any).logClick?.('ads_mobile'); }} className="text-left font-medium">Оголошення</button>
+                <a href={INSTAGRAM_LINK} target="_blank" onClick={() => (window as any).logClick?.('instagram_mobile')} className="font-medium">Instagram</a>
+                <a href={TIKTOK_LINK} target="_blank" onClick={() => (window as any).logClick?.('tiktok_mobile')} className="font-medium">TikTok</a>
+                <a href={FACEBOOK_LINK} target="_blank" onClick={() => (window as any).logClick?.('facebook_mobile')} className="font-medium">Facebook</a>
               </div>
             </motion.div>
           )}

@@ -146,6 +146,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       let visitsCount = 0;
       let totalViews = 0;
       let mostViewed: any[] = [];
+      let clicks: { [key: string]: number } = {};
 
       // Fetch everything from Supabase (Primary Source)
       if (supabase) {
@@ -170,6 +171,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           if (!visitsError && supabaseVisits !== null) {
             visitsCount = supabaseVisits;
           }
+
+          // Get clicks from Supabase stats table
+          const { data: clicksData, error: clicksError } = await supabase
+            .from('stats')
+            .select('type')
+            .like('type', 'click_%');
+          
+          if (!clicksError && clicksData) {
+            clicksData.forEach(row => {
+              const type = row.type.replace('click_', '');
+              clicks[type] = (clicks[type] || 0) + 1;
+            });
+          }
         } catch (err: any) {
           console.warn('Supabase stats fetch error:', err.message);
         }
@@ -179,7 +193,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         totalVisits: visitsCount,
         totalViews: totalViews,
         mostViewed: mostViewed,
-        onlineUsers: 0 // No longer tracking real-time online users without sockets
+        onlineUsers: 0,
+        clicks: clicks
       });
       
       if (isManual) {
@@ -221,7 +236,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         const { error: sError } = await supabase
           .from('stats')
           .delete()
-          .match({ type: 'visit' });
+          .or('type.eq.visit,type.like.click_%');
 
         if (sError) {
           console.error('Visit stats delete error:', sError);
@@ -1102,6 +1117,36 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <span className="font-mono font-medium">{item.views}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-xl font-bold mb-8">Переходи по сайту</h3>
+                <div className="space-y-4">
+                  {[
+                    { id: 'catalog', name: 'Каталог', icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
+                    { id: 'reviews', name: 'Відгуки', icon: MessageSquare, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                    { id: 'ads', name: 'Оголошення', icon: Megaphone, color: 'text-purple-600', bg: 'bg-purple-50' },
+                    { id: 'instagram', name: 'Instagram', icon: Star, color: 'text-pink-600', bg: 'bg-pink-50' },
+                    { id: 'tiktok', name: 'TikTok', icon: TrendingUp, color: 'text-stone-900', bg: 'bg-stone-100' },
+                    { id: 'facebook', name: 'Facebook', icon: ShieldCheck, color: 'text-blue-800', bg: 'bg-blue-100' },
+                  ].map((item) => {
+                    const count = (stats?.clicks?.[item.id] || 0) + (stats?.clicks?.[`${item.id}_mobile`] || 0);
+                    return (
+                      <div key={item.id} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 ${item.bg} ${item.color} rounded-lg`}>
+                            <item.icon size={18} />
+                          </div>
+                          <span className="font-medium text-stone-700">{item.name}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-lg font-bold text-stone-900">{count}</span>
+                          <span className="text-[10px] text-stone-400 uppercase tracking-wider">кліків</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
