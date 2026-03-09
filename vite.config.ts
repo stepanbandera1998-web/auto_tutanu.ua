@@ -16,9 +16,13 @@ export default defineConfig(({mode}) => {
       },
     },
     build: {
+      sourcemap: false,
       modulePreload: {
         polyfill: false,
       },
+    },
+    css: {
+      devSourcemap: false,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
