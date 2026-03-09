@@ -208,7 +208,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         const { error: pError } = await supabase
           .from('products')
           .update({ views: 0 })
-          .neq('id', 0); // Use a filter that matches all numeric IDs
+          .not('id', 'is', null); // This works for both UUID and numeric IDs to target all rows
 
         if (pError) {
           console.error('Product views reset error:', pError);
