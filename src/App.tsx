@@ -364,6 +364,8 @@ export default function App() {
             <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
               <input 
+                id="search_query"
+                name="search"
                 type="text" 
                 placeholder="Пошук..."
                 value={searchQuery}
@@ -864,6 +866,8 @@ export default function App() {
                   <label className="text-sm font-medium text-stone-600 mb-1 block">Ваше ім'я</label>
                   <input 
                     required
+                    id="review_user_name"
+                    name="user_name"
                     type="text" 
                     value={newReview.user_name}
                     onChange={(e) => setNewReview({...newReview, user_name: e.target.value})}
@@ -890,6 +894,8 @@ export default function App() {
                   <label className="text-sm font-medium text-stone-600 mb-1 block">Ваш коментар</label>
                   <textarea 
                     required
+                    id="review_comment"
+                    name="comment"
                     rows={4}
                     value={newReview.comment}
                     onChange={(e) => setNewReview({...newReview, comment: e.target.value})}
@@ -1056,6 +1062,8 @@ export default function App() {
                 <div>
                   <label className="text-sm font-medium text-stone-600 mb-1 block">Пароль</label>
                   <input 
+                    id="admin_password"
+                    name="password"
                     type="password" 
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

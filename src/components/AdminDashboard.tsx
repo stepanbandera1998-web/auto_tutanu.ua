@@ -1180,6 +1180,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <label className="text-sm font-medium text-stone-700">Заголовок</label>
                     <input 
                       required
+                      id="ad_title"
+                      name="title"
                       type="text"
                       value={adFormData.title}
                       onChange={e => setAdFormData({ ...adFormData, title: e.target.value })}
@@ -1190,6 +1192,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <label className="text-sm font-medium text-stone-700">Ціна (грн)</label>
                     <input 
                       required
+                      id="ad_price"
+                      name="price"
                       type="number"
                       value={adFormData.price}
                       onChange={e => setAdFormData({ ...adFormData, price: e.target.value })}
@@ -1203,6 +1207,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <label className="text-sm font-medium text-stone-700">Телефон власника</label>
                     <input 
                       required
+                      id="ad_phone"
+                      name="phone"
                       type="text"
                       value={adFormData.phone}
                       onChange={e => setAdFormData({ ...adFormData, phone: e.target.value })}
@@ -1213,6 +1219,7 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <input 
                       type="checkbox"
                       id="is_placeholder"
+                      name="is_placeholder"
                       checked={adFormData.is_placeholder}
                       onChange={e => setAdFormData({ ...adFormData, is_placeholder: e.target.checked })}
                       className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
@@ -1225,6 +1232,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                   <label className="text-sm font-medium text-stone-700">Опис</label>
                   <textarea 
                     required
+                    id="ad_description"
+                    name="description"
                     rows={4}
                     value={adFormData.description}
                     onChange={e => setAdFormData({ ...adFormData, description: e.target.value })}
@@ -1236,6 +1245,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                   <label className="text-sm font-medium text-stone-700">Зображення ({adFormData.images.length}/10)</label>
                   <input 
                     type="file" 
+                    id="ad_images"
+                    name="images"
                     ref={adFileInputRef}
                     onChange={(e) => handleFileUpload(e, 'ad')}
                     accept="image/*"
@@ -1308,6 +1319,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <label className="text-sm font-medium text-stone-700">Назва товару</label>
                     <input 
                       required
+                      id="product_name"
+                      name="name"
                       type="text"
                       value={formData.name}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -1319,6 +1332,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <label className="text-sm font-medium text-stone-700">Ціна (грн)</label>
                     <input 
                       required
+                      id="product_price"
+                      name="price"
                       type="number"
                       value={formData.price}
                       onChange={e => setFormData({ ...formData, price: e.target.value })}
@@ -1333,6 +1348,7 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <input 
                       type="checkbox"
                       id="is_sale"
+                      name="is_sale"
                       checked={formData.is_sale}
                       onChange={e => setFormData({ ...formData, is_sale: e.target.checked })}
                       className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
@@ -1343,6 +1359,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-stone-700">Стара ціна (грн)</label>
                       <input 
+                        id="product_old_price"
+                        name="old_price"
                         type="number"
                         value={formData.old_price}
                         onChange={e => setFormData({ ...formData, old_price: e.target.value })}
@@ -1356,6 +1374,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
                   <input 
+                    id="product_sku"
+                    name="sku"
                     type="text"
                     value={formData.sku}
                     onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
@@ -1405,6 +1425,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                   </div>
                   <textarea 
                     required
+                    id="product_description"
+                    name="description"
                     rows={4}
                     value={formData.description}
                     onChange={e => setFormData({ ...formData, description: e.target.value })}
@@ -1421,6 +1443,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
                   {/* Hidden file input */}
                   <input 
                     type="file" 
+                    id="product_images_file"
+                    name="images_file"
                     ref={fileInputRef}
                     onChange={(e) => handleFileUpload(e, 'product')}
                     accept="image/*"
@@ -1430,6 +1454,8 @@ CREATE POLICY "Allow public read to stats" ON stats FOR SELECT USING (true);`}
 
                   <div className="flex gap-2">
                     <input 
+                      id="product_image_url"
+                      name="image_url"
                       type="text"
                       value={imageUrlInput}
                       onChange={e => setImageUrlInput(e.target.value)}
