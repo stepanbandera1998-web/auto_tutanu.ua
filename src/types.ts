@@ -8,6 +8,7 @@ export interface Product {
   is_sale?: boolean;
   old_price?: number;
   views: number;
+  radius?: string;
   created_at: string;
 }
 
@@ -36,4 +37,12 @@ export interface Ad {
   images: string[];
   is_placeholder: boolean;
   created_at: string;
+}
+
+export interface SiteSettings {
+  id: string;
+  banner_url?: string;
+  catalog_header_image?: string;
+  ads_header_image?: string;
+  updated_at: string;
 }

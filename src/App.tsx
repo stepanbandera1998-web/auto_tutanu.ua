@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { WheelLogo } from './components/WheelLogo';
 import { MultiSpokeLogo } from './components/MultiSpokeLogo';
-import { Product, Review, Ad } from './types';
+import { Product, Review, Ad, SiteSettings } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import AdminDashboard from './components/AdminDashboard';
 import { format } from 'date-fns';
@@ -33,6 +33,7 @@ const TELEGRAM_LINK = "https://t.me/CT8228";
 const INSTAGRAM_LINK = "https://www.instagram.com/auto_tutanu.ua";
 const TIKTOK_LINK = "https://www.tiktok.com/@auto_tutanu.ua";
 const FACEBOOK_LINK = "https://www.facebook.com/profile.php?id=100041438364922";
+const TELEGRAM_CHANNEL_LINK = "https://t.me/auto_tutanu";
 
 type Tab = 'catalog' | 'reviews' | 'ads';
 
@@ -40,6 +41,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isLoadingAds, setIsLoadingAds] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -57,6 +59,7 @@ export default function App() {
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [newReview, setNewReview] = useState({ user_name: '', rating: 5, comment: '' });
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [selectedRadius, setSelectedRadius] = useState<string | null>(null);
 
   const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured'>('checking');
 
@@ -100,7 +103,8 @@ export default function App() {
           checkConnection(),
           fetchProducts(),
           fetchReviews(),
-          fetchAds()
+          fetchAds(),
+          fetchSettings()
         ]);
       } catch (error) {
         console.error('Initial fetch error:', error);
@@ -260,6 +264,22 @@ export default function App() {
     }
   };
 
+  const fetchSettings = async () => {
+    try {
+      if (!supabase) return;
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('*')
+        .single();
+      
+      if (!error && data) {
+        setSiteSettings(data);
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
+  };
+
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const handleAddReview = async (e: React.FormEvent) => {
@@ -296,11 +316,15 @@ export default function App() {
     }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    const matchesRadius = !selectedRadius || p.radius === selectedRadius;
+    
+    return matchesSearch && matchesRadius;
+  });
 
   if (isAdmin) {
     return <AdminDashboard onLogout={() => setIsAdmin(false)} />;
@@ -425,7 +449,7 @@ export default function App() {
           <header className="relative py-20 px-4 overflow-hidden bg-stone-900 text-white">
             <div className="absolute inset-0 opacity-20">
               <img 
-                src="https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&q=80&w=1920" 
+                src={siteSettings?.catalog_header_image || "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&q=80&w=1920"} 
                 className="w-full h-full object-cover"
                 alt=""
                 referrerPolicy="no-referrer"
@@ -472,7 +496,7 @@ export default function App() {
 
           {/* Catalog */}
           <main id="catalog" className="max-w-7xl mx-auto px-4 py-20">
-            <div className="flex justify-between items-end mb-12">
+            <div className="flex justify-between items-end mb-8">
               <div>
                 <h3 className="text-3xl font-bold tracking-tight mb-2">Наші товари</h3>
                 <p className="text-stone-500">Виберіть найкраще для вашого автомобіля</p>
@@ -480,6 +504,33 @@ export default function App() {
               <div className="text-sm font-medium text-stone-400">
                 Знайдено {filteredProducts.length} товарів
               </div>
+            </div>
+
+            {/* Radius Filter */}
+            <div className="flex flex-wrap gap-4 mb-12 justify-center sm:justify-start">
+              <button
+                onClick={() => setSelectedRadius(null)}
+                className={`w-14 h-14 rounded-full flex items-center justify-center text-xs font-bold transition-all border-2 ${
+                  selectedRadius === null 
+                    ? 'bg-stone-900 border-stone-900 text-white shadow-lg scale-110' 
+                    : 'bg-white border-stone-200 text-stone-600 hover:border-stone-400'
+                }`}
+              >
+                Все
+              </button>
+              {['R13', 'R14', 'R15', 'R16', 'R17', 'R18'].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setSelectedRadius(selectedRadius === r ? null : r)}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center text-xs font-bold transition-all border-2 ${
+                    selectedRadius === r 
+                      ? 'bg-stone-900 border-stone-900 text-white shadow-lg scale-110' 
+                      : 'bg-white border-stone-200 text-stone-600 hover:border-stone-400'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -606,9 +657,24 @@ export default function App() {
 
       {activeTab === 'ads' && (
         <main className="max-w-7xl mx-auto px-4 py-20">
+          {siteSettings?.banner_url && (
+            <div className="mb-20 rounded-[3rem] overflow-hidden shadow-2xl">
+              <img 
+                src={siteSettings.banner_url} 
+                className="w-full h-auto object-cover max-h-[400px]" 
+                alt="Рекламний банер" 
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          )}
           <div className="bg-stone-900 rounded-[3rem] p-12 text-white mb-20 relative overflow-hidden">
             <div className="absolute inset-0 opacity-10">
-              <img src="https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920" className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+              <img 
+                src={siteSettings?.ads_header_image || "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920"} 
+                className="w-full h-full object-cover" 
+                alt="" 
+                referrerPolicy="no-referrer" 
+              />
             </div>
             <div className="relative z-10 max-w-2xl">
               <h2 className="text-4xl md:text-5xl font-bold mb-6">Продайте свої диски у нас!</h2>
@@ -1125,6 +1191,9 @@ export default function App() {
             </a>
             <a href={INSTAGRAM_LINK} target="_blank" className="text-stone-400 hover:text-stone-900 transition-colors">
               <Instagram size={24} />
+            </a>
+            <a href={TELEGRAM_CHANNEL_LINK} target="_blank" className="text-stone-400 hover:text-stone-900 transition-colors">
+              <Send size={24} />
             </a>
             <a href={WHATSAPP_LINK} target="_blank" className="text-stone-400 hover:text-stone-900 transition-colors">
               <MessageCircle size={24} />

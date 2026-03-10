@@ -18,9 +18,10 @@ import {
   RefreshCw,
   Phone,
   Send,
-  MessageCircle
+  MessageCircle,
+  Settings
 } from 'lucide-react';
-import { Product, Stats, Ad, Review } from '../types';
+import { Product, Stats, Ad, Review, SiteSettings } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   BarChart, 
@@ -40,10 +41,11 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [ads, setAds] = useState<Ad[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isAddingAd, setIsAddingAd] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats'>('products');
+  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats' | 'settings'>('products');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -56,7 +58,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     images: [] as string[],
     sku: '',
     is_sale: false,
-    old_price: ''
+    old_price: '',
+    radius: ''
   });
   const [adFormData, setAdFormData] = useState({
     title: '',
@@ -74,6 +77,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     fetchAds();
     fetchReviews();
     fetchStats();
+    fetchSettings();
     
     // Polling for general stats
     const interval = setInterval(fetchStats, 10000);
@@ -82,6 +86,49 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       clearInterval(interval);
     };
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      if (!supabase) return;
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('*')
+        .single();
+      
+      if (!error && data) {
+        setSiteSettings(data);
+      } else if (error && error.code === 'PGRST116') {
+        // No settings found, create default
+        const { data: newData, error: createError } = await supabase
+          .from('site_settings')
+          .insert([{ id: '00000000-0000-0000-0000-000000000000' }])
+          .select()
+          .single();
+        if (!createError) setSiteSettings(newData);
+      }
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+    }
+  };
+
+  const handleSaveSettings = async (newSettings: Partial<SiteSettings>) => {
+    setIsSubmitting(true);
+    try {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { error } = await supabase
+        .from('site_settings')
+        .update(newSettings)
+        .eq('id', siteSettings?.id || '00000000-0000-0000-0000-000000000000');
+      
+      if (error) throw error;
+      showNotification('Налаштування збережено');
+      fetchSettings();
+    } catch (error: any) {
+      showNotification('Помилка: ' + error.message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -284,7 +331,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         description: formData.description,
         price,
         images: formData.images,
-        sku
+        sku,
+        radius: formData.radius
       };
 
       // Only include sale fields if they are actually used to avoid errors if columns don't exist yet
@@ -315,8 +363,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         if (result.error) {
           // Check if the error is due to missing columns
           if (result.error.message?.includes('column "is_sale" does not exist') || 
-              result.error.message?.includes('column "old_price" does not exist')) {
-            throw new Error('У вашій базі даних Supabase відсутні колонки "is_sale" або "old_price". Будь ласка, додайте їх до таблиці "products" (is_sale: boolean, old_price: numeric) або зверніться до розробника.');
+              result.error.message?.includes('column "old_price" does not exist') ||
+              result.error.message?.includes('column "radius" does not exist') ||
+              result.error.message?.includes('radius')) {
+            throw new Error('У вашій базі даних Supabase відсутня колонка "radius" (або "is_sale"/"old_price"). Будь ласка, додайте колонку "radius" (тип text) до таблиці "products" у панелі Supabase SQL Editor або зверніться до розробника.');
           }
           throw result.error;
         }
@@ -324,7 +374,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         showNotification(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
-        setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '' });
+        setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '', radius: '' });
         fetchProducts();
       } catch (error: any) {
         console.error('Error submitting product:', error);
@@ -782,6 +832,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
             {activeView === 'stats' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
+          <button 
+            onClick={() => setActiveView('settings')}
+            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'settings' ? 'text-stone-900' : 'text-stone-400'}`}
+          >
+            <div className="flex items-center gap-2">
+              <Settings size={20} /> Налаштування
+            </div>
+            {activeView === 'settings' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
+          </button>
         </div>
       </div>
 
@@ -796,7 +855,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={() => {
                     setIsAdding(true);
                     setEditingProduct(null);
-                    setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '' });
+                    setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '', radius: '' });
                   }}
                   className="flex items-center gap-2 bg-stone-900 text-white px-4 py-2 rounded-xl hover:bg-stone-800 transition-colors"
                 >
@@ -810,6 +869,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     <tr>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Код</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Товар</th>
+                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Радіус</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Ціна</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500">Перегляди</th>
                       <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
@@ -837,6 +897,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                             </div>
                           </div>
                         </td>
+                        <td className="px-6 py-4">
+                          <span className="text-sm font-medium text-stone-600">{product.radius || '—'}</span>
+                        </td>
                         <td className="px-6 py-4">{product.price} грн</td>
                         <td className="px-6 py-4">{product.views}</td>
                         <td className="px-6 py-4 text-right">
@@ -851,7 +914,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                   images: product.images,
                                   sku: product.sku,
                                   is_sale: product.is_sale || false,
-                                  old_price: product.old_price?.toString() || ''
+                                  old_price: product.old_price?.toString() || '',
+                                  radius: product.radius || ''
                                 });
                                 setIsAdding(true);
                               }}
@@ -1221,6 +1285,151 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
           </div>
         )}
+
+        {activeView === 'settings' && (
+          <div className="max-w-4xl mx-auto space-y-8">
+            <h2 className="text-2xl font-bold">Налаштування сайту</h2>
+            
+            <div className="bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm space-y-8">
+              {/* Banner Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <Megaphone size={20} className="text-purple-600" /> Рекламний банер
+                </h3>
+                <p className="text-sm text-stone-500">Цей банер буде відображатися у верхній частині розділу "Оголошення". Якщо фото не завантажене, банер не буде видно.</p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-stone-700">Фото банера</label>
+                  <div className="flex gap-4 items-start">
+                    <div className="flex-1 space-y-4">
+                      <input 
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const base64 = reader.result as string;
+                              const compressed = await compressImage(base64, 1200, 400);
+                              handleSaveSettings({ banner_url: compressed });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="hidden"
+                        id="banner-upload"
+                      />
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => document.getElementById('banner-upload')?.click()}
+                          className="bg-stone-100 text-stone-900 px-4 py-2 rounded-xl font-medium hover:bg-stone-200 transition-all flex items-center gap-2"
+                        >
+                          <ImageIcon size={18} /> Завантажити фото
+                        </button>
+                        {siteSettings?.banner_url && (
+                          <button 
+                            onClick={() => handleSaveSettings({ banner_url: '' })}
+                            className="text-red-600 px-4 py-2 rounded-xl font-medium hover:bg-red-50 transition-all"
+                          >
+                            Видалити банер
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {siteSettings?.banner_url && (
+                      <div className="w-48 aspect-[3/1] rounded-xl overflow-hidden border border-stone-200">
+                        <img src={siteSettings.banner_url} className="w-full h-full object-cover" alt="Прев'ю банера" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <hr className="border-stone-100" />
+
+              {/* Header Images Settings */}
+              <div className="space-y-6">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <ImageIcon size={20} className="text-blue-600" /> Фонові зображення розділів
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Catalog Header */}
+                  <div className="space-y-4">
+                    <label className="text-sm font-medium text-stone-700">Фон Каталогу</label>
+                    <div className="aspect-video rounded-2xl overflow-hidden border border-stone-200 bg-stone-50 relative group">
+                      <img 
+                        src={siteSettings?.catalog_header_image || "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&q=80&w=1920"} 
+                        className="w-full h-full object-cover" 
+                        alt="" 
+                      />
+                      <button 
+                        onClick={() => document.getElementById('catalog-header-upload')?.click()}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2"
+                      >
+                        <Edit size={20} /> Змінити
+                      </button>
+                      <input 
+                        type="file"
+                        id="catalog-header-upload"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const base64 = reader.result as string;
+                              const compressed = await compressImage(base64, 1920, 1080);
+                              handleSaveSettings({ catalog_header_image: compressed });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ads Header */}
+                  <div className="space-y-4">
+                    <label className="text-sm font-medium text-stone-700">Фон Оголошень</label>
+                    <div className="aspect-video rounded-2xl overflow-hidden border border-stone-200 bg-stone-50 relative group">
+                      <img 
+                        src={siteSettings?.ads_header_image || "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920"} 
+                        className="w-full h-full object-cover" 
+                        alt="" 
+                      />
+                      <button 
+                        onClick={() => document.getElementById('ads-header-upload')?.click()}
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold gap-2"
+                      >
+                        <Edit size={20} /> Змінити
+                      </button>
+                      <input 
+                        type="file"
+                        id="ads-header-upload"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = async () => {
+                              const base64 = reader.result as string;
+                              const compressed = await compressImage(base64, 1920, 1080);
+                              handleSaveSettings({ ads_header_image: compressed });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal for Add Ad */}
@@ -1443,17 +1652,34 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
-                  <input 
-                    id="product_sku"
-                    name="sku"
-                    type="text"
-                    value={formData.sku}
-                    onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
-                    className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none font-mono"
-                    placeholder="Автоматично (напр. AT-X123)"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
+                    <input 
+                      id="product_sku"
+                      name="sku"
+                      type="text"
+                      value={formData.sku}
+                      onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
+                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none font-mono"
+                      placeholder="Автоматично (напр. AT-X123)"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">Радіус коліс</label>
+                    <select 
+                      id="product_radius"
+                      name="radius"
+                      value={formData.radius}
+                      onChange={e => setFormData({ ...formData, radius: e.target.value })}
+                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                    >
+                      <option value="">Виберіть радіус</option>
+                      {['R13', 'R14', 'R15', 'R16', 'R17', 'R18'].map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
