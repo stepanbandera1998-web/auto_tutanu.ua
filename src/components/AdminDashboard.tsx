@@ -45,6 +45,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [isAdding, setIsAdding] = useState(false);
   const [isAddingAd, setIsAddingAd] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingAd, setEditingAd] = useState<Ad | null>(null);
   const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats' | 'settings'>('products');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,7 +68,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     price: '',
     phone: '',
     images: [] as string[],
-    is_placeholder: false
+    is_placeholder: false,
+    product_id: '' as string | number
   });
 
   const [isRefreshingStats, setIsRefreshingStats] = useState(false);
@@ -222,17 +224,23 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             visitsCount = supabaseVisits;
           }
 
-          // Get clicks from Supabase stats table
-          const { data: clicksData, error: clicksError } = await supabase
-            .from('stats')
-            .select('type')
-            .like('type', 'click_%');
+          // Get clicks from Supabase stats table - Optimized to fetch only necessary types
+          // Instead of fetching all rows, we fetch counts for common types
+          const clickTypes = [
+            'catalog', 'reviews', 'ads', 'instagram', 'tiktok', 'facebook', 
+            'contact_telegram', 'contact_whatsapp', 'contact_call', 
+            'ad_telegram', 'ad_whatsapp', 'catalog_mobile', 'reviews_mobile', 'ads_mobile'
+          ];
           
-          if (!clicksError && clicksData) {
-            clicksData.forEach(row => {
-              const type = row.type.replace('click_', '');
-              clicks[type] = (clicks[type] || 0) + 1;
-            });
+          for (const type of clickTypes) {
+            const { count, error } = await supabase
+              .from('stats')
+              .select('*', { count: 'exact', head: true })
+              .eq('type', `click_${type}`);
+            
+            if (!error && count !== null) {
+              clicks[type] = count;
+            }
           }
         } catch (err: any) {
           console.warn('Supabase stats fetch error:', err.message);
@@ -397,23 +405,44 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
       if (!supabase) throw new Error('Supabase not configured');
-      const { error } = await supabase
-        .from('ads')
-        .insert([{
-          ...adFormData,
-          price,
-        }]);
       
-      if (error) {
-        if (error.message?.includes('column "is_placeholder" does not exist')) {
-          throw new Error('У вашій таблиці "ads" відсутня колонка "is_placeholder". Будь ласка, додайте її (boolean, default false) або зверніться до розробника.');
+      const adData = {
+        title: adFormData.title,
+        description: adFormData.description,
+        price,
+        phone: adFormData.phone,
+        images: adFormData.images,
+        is_placeholder: adFormData.is_placeholder,
+        product_id: adFormData.product_id ? parseInt(adFormData.product_id.toString()) : null
+      };
+
+      if (editingAd) {
+        const { error } = await supabase
+          .from('ads')
+          .update(adData)
+          .eq('id', editingAd.id);
+        if (error) throw error;
+        showNotification('Оголошення оновлено!');
+      } else {
+        const { error } = await supabase
+          .from('ads')
+          .insert([adData]);
+        
+        if (error) {
+          if (error.message?.includes('column "is_placeholder" does not exist')) {
+            throw new Error('У вашій таблиці "ads" відсутня колонка "is_placeholder". Будь ласка, додайте її (boolean, default false) або зверніться до розробника.');
+          }
+          if (error.message?.includes('column "product_id" does not exist')) {
+            throw new Error('У вашій таблиці "ads" відсутня колонка "product_id". Будь ласка, додайте її (int8, references products.id) або зверніться до розробника.');
+          }
+          throw error;
         }
-        throw error;
+        showNotification('Оголошення опубліковано!');
       }
       
-      showNotification('Оголошення опубліковано!');
       setIsAddingAd(false);
-      setAdFormData({ title: '', description: '', price: '', phone: '', images: [], is_placeholder: false });
+      setEditingAd(null);
+      setAdFormData({ title: '', description: '', price: '', phone: '', images: [], is_placeholder: false, product_id: '' });
       fetchAds();
     } catch (error: any) {
       console.error('Error submitting ad:', error);
@@ -1006,12 +1035,32 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => handleDeleteAd(ad.id)}
-                          className="p-2 text-stone-400 hover:text-red-600 transition-colors"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingAd(ad);
+                              setAdFormData({
+                                title: ad.title,
+                                description: ad.description,
+                                price: ad.price.toString(),
+                                phone: ad.phone,
+                                images: ad.images,
+                                is_placeholder: ad.is_placeholder,
+                                product_id: ad.product_id || ''
+                              });
+                              setIsAddingAd(true);
+                            }}
+                            className="p-2 text-stone-400 hover:text-stone-900 transition-colors"
+                          >
+                            <Edit size={18} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteAd(ad.id)}
+                            className="p-2 text-stone-400 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )) : (
@@ -1450,8 +1499,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               className="relative bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh]"
             >
               <div className="p-4 sm:p-6 border-b border-stone-100 flex justify-between items-center">
-                <h3 className="text-lg sm:text-xl font-bold">Додати оголошення</h3>
-                <button onClick={() => setIsAddingAd(false)} className="text-stone-400 hover:text-stone-900 p-1">
+                <h3 className="text-lg sm:text-xl font-bold">{editingAd ? 'Редагувати оголошення' : 'Додати оголошення'}</h3>
+                <button onClick={() => { setIsAddingAd(false); setEditingAd(null); }} className="text-stone-400 hover:text-stone-900 p-1">
                   <X size={24} />
                 </button>
               </div>
@@ -1496,17 +1545,33 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
                     />
                   </div>
-                  <div className="flex items-center gap-2 pt-8">
-                    <input 
-                      type="checkbox"
-                      id="is_placeholder"
-                      name="is_placeholder"
-                      checked={adFormData.is_placeholder}
-                      onChange={e => setAdFormData({ ...adFormData, is_placeholder: e.target.checked })}
-                      className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
-                    />
-                    <label htmlFor="is_placeholder" className="text-sm font-medium text-stone-700">Це заглушка (замальоване)</label>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-stone-700">Прив'язати товар (опціонально)</label>
+                    <select 
+                      id="ad_product_id"
+                      name="product_id"
+                      value={adFormData.product_id}
+                      onChange={e => setAdFormData({ ...adFormData, product_id: e.target.value })}
+                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                    >
+                      <option value="">Не вибрано</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+                      ))}
+                    </select>
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox"
+                    id="is_placeholder"
+                    name="is_placeholder"
+                    checked={adFormData.is_placeholder}
+                    onChange={e => setAdFormData({ ...adFormData, is_placeholder: e.target.checked })}
+                    className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
+                  />
+                  <label htmlFor="is_placeholder" className="text-sm font-medium text-stone-700">Це заглушка (замальоване)</label>
                 </div>
 
                 <div className="space-y-2">
@@ -1565,7 +1630,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   disabled={isSubmitting}
                   className={`w-full bg-stone-900 text-white py-3 rounded-xl font-bold hover:bg-stone-800 transition-colors ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {isSubmitting ? 'Публікація...' : 'Опублікувати оголошення'}
+                  {isSubmitting ? 'Публікація...' : (editingAd ? 'Зберегти зміни' : 'Опублікувати оголошення')}
                 </button>
               </form>
             </motion.div>

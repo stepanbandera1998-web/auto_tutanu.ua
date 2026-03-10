@@ -98,6 +98,15 @@ export default function App() {
     
     const init = async () => {
       setIsInitialLoading(true);
+      
+      // Set a safety timeout to hide loading screen even if some requests hang
+      const timeoutId = setTimeout(() => {
+        if (isInitialLoading) {
+          console.warn('Initial loading timed out. Showing app anyway.');
+          setIsInitialLoading(false);
+        }
+      }, 15000); // 15 seconds timeout
+
       try {
         await Promise.all([
           checkConnection(),
@@ -109,6 +118,7 @@ export default function App() {
       } catch (error) {
         console.error('Initial fetch error:', error);
       } finally {
+        clearTimeout(timeoutId);
         setIsInitialLoading(false);
       }
     };
@@ -841,6 +851,35 @@ export default function App() {
                       {selectedAd.description}
                     </p>
                   </div>
+
+                  {selectedAd.product_id && (
+                    <div className="mb-6 p-4 bg-stone-50 rounded-2xl border border-stone-100">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 mb-2">Прив'язаний товар</p>
+                      {products.find(p => p.id === selectedAd.product_id) ? (
+                        <div className="flex items-center gap-4">
+                          <img 
+                            src={products.find(p => p.id === selectedAd.product_id)?.images[0]} 
+                            className="w-16 h-16 object-cover rounded-xl"
+                            alt=""
+                          />
+                          <div>
+                            <p className="font-bold text-sm">{products.find(p => p.id === selectedAd.product_id)?.name}</p>
+                            <button 
+                              onClick={() => {
+                                setSelectedProduct(products.find(p => p.id === selectedAd.product_id) || null);
+                                setSelectedAd(null);
+                              }}
+                              className="text-stone-900 text-xs font-bold hover:underline mt-1"
+                            >
+                              Перейти до товару →
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-stone-500 italic">Товар більше не доступний</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3 pt-4 border-t border-stone-100">

@@ -36,6 +36,7 @@ export interface Ad {
   phone: string;
   images: string[];
   is_placeholder: boolean;
+  product_id?: number;
   created_at: string;
 }
 
