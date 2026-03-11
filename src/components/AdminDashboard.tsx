@@ -3,7 +3,9 @@ import {
   LayoutDashboard, 
   Package, 
   TrendingUp, 
-  Plus, 
+  Plus,
+  ChevronLeft,
+  ChevronRight,
   Trash2, 
   Edit, 
   Eye, 
@@ -19,7 +21,8 @@ import {
   Phone,
   Send,
   MessageCircle,
-  Settings
+  Settings,
+  Search
 } from 'lucide-react';
 import { Product, Stats, Ad, Review, SiteSettings } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -81,6 +84,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     site_settings: { exists: boolean; columns: string[] };
   } | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -88,6 +94,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     fetchReviews();
     fetchStats();
     fetchSettings();
+    checkDatabaseHealth();
     
     // Опитування загальної статистики
     const interval = setInterval(fetchStats, 30000); // Збільшуємо інтервал до 30с
@@ -192,16 +199,26 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const fetchProducts = async () => {
     try {
       if (!supabase) throw new Error('Supabase not configured');
+      setIsLoadingProducts(true);
+      console.log('Fetching products from Supabase...');
       const { data, error } = await supabase
         .from('products')
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error fetching products:', error);
+        throw error;
+      }
+      
+      console.log(`Fetched ${data?.length || 0} products from Supabase`);
       setProducts(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching products:', error);
+      showNotification('Помилка завантаження товарів: ' + (error.message || 'Невідома помилка'), 'error');
       setProducts([]);
+    } finally {
+      setIsLoadingProducts(false);
     }
   };
 
@@ -826,6 +843,82 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const toggleProductSelection = (id: number) => {
+    setSelectedProductIds(prev => 
+      prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+    
+    showConfirm(`Ви впевнені, що хочете видалити ${selectedProductIds.length} товарів?`, async () => {
+      setIsBulkDeleting(true);
+      try {
+        const { error } = await supabase
+          .from('products')
+          .delete()
+          .in('id', selectedProductIds);
+        
+        if (error) throw error;
+        
+        showNotification(`Видалено ${selectedProductIds.length} товарів`, 'success');
+        setSelectedProductIds([]);
+        fetchProducts();
+      } catch (err) {
+        console.error('Bulk delete error:', err);
+        showNotification('Помилка при масовому видаленні', 'error');
+      } finally {
+        setIsBulkDeleting(false);
+      }
+    });
+  };
+
+  const moveImage = (type: 'product' | 'ad', index: number, direction: 'left' | 'right') => {
+    if (type === 'product') {
+      const newImages = [...formData.images];
+      const newIndex = direction === 'left' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= newImages.length) return;
+      [newImages[index], newImages[newIndex]] = [newImages[newIndex], newImages[index]];
+      setFormData({ ...formData, images: newImages });
+    } else {
+      const newImages = [...adFormData.images];
+      const newIndex = direction === 'left' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= newImages.length) return;
+      [newImages[index], newImages[newIndex]] = [newImages[newIndex], newImages[index]];
+      setAdFormData({ ...adFormData, images: newImages });
+    }
+  };
+
+  const exportToCSV = (data: any[], filename: string) => {
+    if (!data || data.length === 0) return;
+    
+    const headers = Object.keys(data[0]).join(',');
+    const rows = data.map(obj => 
+      Object.values(obj).map(val => 
+        typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val
+      ).join(',')
+    );
+    
+    const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + rows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      showNotification('Скопійовано в буфер обміну', 'success');
+    });
+  };
+
   return (
     <div className="min-h-screen bg-stone-50 p-4 md:p-8">
       <AnimatePresence>
@@ -862,12 +955,24 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             <h1 className="text-3xl font-bold tracking-tight">Панель адміністратора</h1>
             <p className="text-stone-500">Керуйте вашим магазином та переглядайте статистику</p>
           </div>
-          <button 
-            onClick={onLogout}
-            className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-          >
-            <LogOut size={20} /> Вийти
-          </button>
+          <div className="flex items-center gap-4">
+            <div 
+              onClick={checkDatabaseHealth}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+                dbHealth?.products?.exists ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-red-50 text-red-600 hover:bg-red-100'
+              }`}
+              title="Натисніть для перевірки стану бази даних"
+            >
+              <div className={`w-1.5 h-1.5 rounded-full ${dbHealth?.products?.exists ? 'bg-emerald-500' : 'bg-red-500'} ${isCheckingHealth ? 'animate-pulse' : ''}`} />
+              {isCheckingHealth ? 'Перевірка...' : (dbHealth?.products?.exists ? 'База даних: OK' : 'База даних: Помилка')}
+            </div>
+            <button 
+              onClick={onLogout}
+              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <LogOut size={20} /> Вийти
+            </button>
+          </div>
         </div>
 
         {/* Stats Grid */}
@@ -956,9 +1061,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         {activeView === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Product List */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Товари</h2>
+                <div className="flex items-center gap-4">
+                  <h2 className="text-xl font-semibold">Товари</h2>
+                  <button 
+                    onClick={fetchProducts}
+                    disabled={isLoadingProducts}
+                    className={`p-2 rounded-lg hover:bg-stone-100 transition-colors ${isLoadingProducts ? 'animate-spin text-stone-300' : 'text-stone-500'}`}
+                    title="Оновити список"
+                  >
+                    <RefreshCw size={18} />
+                  </button>
+                </div>
                 <button 
                   onClick={() => {
                     setIsAdding(true);
@@ -971,78 +1086,162 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </button>
               </div>
 
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                <input 
+                  type="text"
+                  placeholder="Пошук товару за назвою або кодом..."
+                  value={adminSearchQuery}
+                  onChange={(e) => setAdminSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-stone-900/5 transition-all"
+                />
+              </div>
+
               <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
-                <table className="w-full text-left min-w-[600px]">
-                  <thead className="bg-stone-50 border-bottom border-stone-200">
-                    <tr>
-                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Код</th>
-                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Товар</th>
-                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Радіус</th>
-                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Ціна</th>
-                      <th className="px-6 py-4 text-sm font-medium text-stone-500">Перегляди</th>
-                      <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {products.map((product) => (
-                      <tr key={product.id} className="hover:bg-stone-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <span className="font-mono text-xs bg-stone-100 px-2 py-1 rounded text-stone-600">{product.sku}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <img 
-                              src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/200/200'} 
-                              className="w-10 h-10 rounded-lg object-cover"
-                              alt=""
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="flex flex-col">
-                              <span className="font-medium">{product.name}</span>
-                              {product.is_sale && (
-                                <span className="text-[10px] font-bold text-red-600 uppercase">Знижка</span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm font-medium text-stone-600">{product.radius || '—'}</span>
-                        </td>
-                        <td className="px-6 py-4">{product.price} грн</td>
-                        <td className="px-6 py-4">{product.views}</td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button 
-                              onClick={() => {
-                                setEditingProduct(product);
-                                setFormData({
-                                  name: product.name,
-                                  description: product.description,
-                                  price: product.price.toString(),
-                                  images: product.images,
-                                  sku: product.sku,
-                                  is_sale: product.is_sale || false,
-                                  old_price: product.old_price?.toString() || '',
-                                  radius: product.radius || ''
-                                });
-                                setIsAdding(true);
+                {isLoadingProducts ? (
+                  <div className="p-12 text-center">
+                    <div className="w-8 h-8 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-stone-500">Завантаження товарів...</p>
+                  </div>
+                ) : (
+                  <>
+                    {selectedProductIds.length > 0 && (
+                      <div className="bg-stone-900 text-white px-6 py-3 flex justify-between items-center">
+                        <span className="text-sm font-medium">Вибрано: {selectedProductIds.length}</span>
+                        <div className="flex gap-4">
+                          <button 
+                            onClick={() => setSelectedProductIds([])}
+                            className="text-sm hover:underline"
+                          >
+                            Скасувати
+                          </button>
+                          <button 
+                            onClick={handleBulkDelete}
+                            disabled={isBulkDeleting}
+                            className="bg-red-600 px-3 py-1 rounded-lg text-sm font-bold hover:bg-red-700 transition-colors flex items-center gap-2"
+                          >
+                            <Trash2 size={14} /> Видалити вибрані
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <table className="w-full text-left min-w-[600px]">
+                      <thead className="bg-stone-50 border-bottom border-stone-200">
+                        <tr>
+                          <th className="px-6 py-4 w-10">
+                            <input 
+                              type="checkbox"
+                              checked={selectedProductIds.length === filteredAdminProducts.length && filteredAdminProducts.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedProductIds(filteredAdminProducts.map(p => p.id));
+                                } else {
+                                  setSelectedProductIds([]);
+                                }
                               }}
-                              className="p-2 text-stone-400 hover:text-stone-900 transition-colors"
-                            >
-                              <Edit size={18} />
-                            </button>
-                            <button 
-                              onClick={() => handleDelete(product.id)}
-                              className="p-2 text-stone-400 hover:text-red-600 transition-colors"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                              className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
+                            />
+                          </th>
+                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Код</th>
+                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Товар</th>
+                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Радіус</th>
+                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Ціна</th>
+                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Перегляди</th>
+                          <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {filteredAdminProducts.length > 0 ? filteredAdminProducts.map((product) => (
+                          <tr key={product.id} className={`hover:bg-stone-50 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-stone-50' : ''}`}>
+                            <td className="px-6 py-4">
+                              <input 
+                                type="checkbox"
+                                checked={selectedProductIds.includes(product.id)}
+                                onChange={() => toggleProductSelection(product.id)}
+                                className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
+                              />
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="font-mono text-xs bg-stone-100 px-2 py-1 rounded text-stone-600">{product.sku}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <img 
+                                  src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/200/200'} 
+                                  className="w-10 h-10 rounded-lg object-cover"
+                                  alt=""
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{product.name}</span>
+                                  {product.is_sale && (
+                                    <span className="text-[10px] font-bold text-red-600 uppercase">Знижка</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm font-medium text-stone-600">{product.radius || '—'}</span>
+                            </td>
+                            <td className="px-6 py-4">{product.price} грн</td>
+                            <td className="px-6 py-4">{product.views}</td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button 
+                                  onClick={() => {
+                                    setEditingProduct(product);
+                                    setFormData({
+                                      name: product.name,
+                                      description: product.description,
+                                      price: product.price.toString(),
+                                      images: product.images,
+                                      sku: product.sku,
+                                      is_sale: product.is_sale || false,
+                                      old_price: product.old_price?.toString() || '',
+                                      radius: product.radius || ''
+                                    });
+                                    setIsAdding(true);
+                                  }}
+                                  className="p-2 text-stone-400 hover:text-stone-900 transition-colors"
+                                >
+                                  <Edit size={18} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDelete(product.id)}
+                                  className="p-2 text-stone-400 hover:text-red-600 transition-colors"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={7} className="px-6 py-12 text-center text-stone-400">
+                              <Package className="mx-auto mb-2 opacity-20" size={32} />
+                              <p>{adminSearchQuery ? 'Товарів за вашим запитом не знайдено' : 'Товарів поки немає'}</p>
+                              {adminSearchQuery ? (
+                                <button 
+                                  onClick={() => setAdminSearchQuery('')}
+                                  className="mt-4 text-stone-900 font-medium hover:underline"
+                                >
+                                  Скинути пошук
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={fetchProducts}
+                                  className="mt-4 text-stone-900 font-medium hover:underline"
+                                >
+                                  Оновити список
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1228,6 +1427,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-semibold">Статистика магазину</h2>
               <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => exportToCSV(products, 'products_export')}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-medium hover:bg-stone-50 transition-colors"
+                >
+                  <TrendingUp size={14} /> Експорт товарів
+                </button>
                 <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${supabase ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
                   <div className={`w-1.5 h-1.5 rounded-full ${supabase ? 'bg-emerald-500' : 'bg-red-500'}`} />
                   {supabase ? 'Supabase: Підключено' : 'Supabase: Помилка'}
@@ -1292,7 +1497,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       />
                       <Tooltip 
                         cursor={{ fill: '#f9f9f9' }}
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-white p-3 rounded-xl shadow-xl border border-stone-100">
+                                <p className="font-bold text-stone-900">{data.name}</p>
+                                <p className="text-xs text-stone-500 font-mono mb-1">Код: {data.sku}</p>
+                                <p className="text-sm text-purple-600 font-semibold">{data.views} переглядів</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
                       />
                       <Bar dataKey="views" radius={[4, 4, 4, 4]} barSize={32}>
                         {(stats?.mostViewed || []).map((entry, index) => (
@@ -1419,6 +1636,24 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             <h2 className="text-2xl font-bold">Налаштування сайту</h2>
             
             <div className="bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm space-y-8">
+              {/* Maintenance Mode */}
+              <div className="flex items-center justify-between p-6 bg-stone-50 rounded-3xl border border-stone-100">
+                <div className="space-y-1">
+                  <h3 className="font-bold flex items-center gap-2">
+                    <ShieldCheck size={20} className="text-amber-600" /> Режим обслуговування
+                  </h3>
+                  <p className="text-sm text-stone-500">Коли увімкнено, звичайні користувачі бачитимуть сторінку "Технічні роботи".</p>
+                </div>
+                <button 
+                  onClick={() => handleSaveSettings({ maintenance_mode: !siteSettings?.maintenance_mode })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${siteSettings?.maintenance_mode ? 'bg-amber-600' : 'bg-stone-200'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${siteSettings?.maintenance_mode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              <hr className="border-stone-100" />
+
               {/* Banner Settings */}
               <div className="space-y-4">
                 <h3 className="text-lg font-bold flex items-center gap-2">
@@ -1466,7 +1701,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     </div>
                     {siteSettings?.banner_url && (
                       <div className="w-48 aspect-[3/1] rounded-xl overflow-hidden border border-stone-200">
-                        <img src={siteSettings.banner_url} className="w-full h-full object-cover" alt="Прев'ю банера" />
+                        <img src={siteSettings.banner_url} className="w-full h-full object-cover" alt="Прев'ю банера" referrerPolicy="no-referrer" />
                       </div>
                     )}
                   </div>
@@ -1542,7 +1777,73 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     <p className="text-sm text-amber-700 mb-4">
                       Скопіюйте цей SQL-запит та виконайте його у <b>SQL Editor</b> вашої панелі Supabase:
                     </p>
-                    <div className="bg-stone-900 p-4 rounded-xl overflow-x-auto">
+                    <div className="bg-stone-900 p-4 rounded-xl overflow-x-auto relative group">
+                      <button 
+                        onClick={() => copyToClipboard(`-- Створення таблиць та додавання відсутніх колонок
+CREATE TABLE IF NOT EXISTS products (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL NOT NULL,
+  images TEXT[] DEFAULT '{}',
+  sku TEXT UNIQUE,
+  radius TEXT,
+  is_sale BOOLEAN DEFAULT FALSE,
+  old_price DECIMAL,
+  views BIGINT DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ads (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL NOT NULL,
+  phone TEXT NOT NULL,
+  images TEXT[] DEFAULT '{}',
+  is_placeholder BOOLEAN DEFAULT FALSE,
+  product_id BIGINT REFERENCES products(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  rating INTEGER NOT NULL,
+  comment TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stats (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  type TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  banner_url TEXT,
+  catalog_header_image TEXT,
+  ads_header_image TEXT,
+  maintenance_mode BOOLEAN DEFAULT FALSE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Додавання колонок, якщо таблиці вже існують
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS radius TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS old_price DECIMAL;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS views BIGINT DEFAULT 0;
+
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS is_placeholder BOOLEAN DEFAULT FALSE;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(id);
+ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFAULT FALSE;`)}
+                        className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Копіювати SQL"
+                      >
+                        <Plus size={16} />
+                      </button>
                       <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed">
 {`-- Створення таблиць та додавання відсутніх колонок
 CREATE TABLE IF NOT EXISTS products (
@@ -1590,6 +1891,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
   banner_url TEXT,
   catalog_header_image TEXT,
   ads_header_image TEXT,
+  maintenance_mode BOOLEAN DEFAULT FALSE,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
@@ -1601,7 +1903,8 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS old_price DECIMAL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS views BIGINT DEFAULT 0;
 
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS is_placeholder BOOLEAN DEFAULT FALSE;
-ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(id);`}
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(id);
+ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFAULT FALSE;`}
                       </pre>
                     </div>
                   </div>
@@ -1625,6 +1928,7 @@ ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(i
                         src={siteSettings?.catalog_header_image || "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&q=80&w=1920"} 
                         className="w-full h-full object-cover" 
                         alt="" 
+                        referrerPolicy="no-referrer"
                       />
                       <button 
                         onClick={() => document.getElementById('catalog-header-upload')?.click()}
@@ -1661,6 +1965,7 @@ ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(i
                         src={siteSettings?.ads_header_image || "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920"} 
                         className="w-full h-full object-cover" 
                         alt="" 
+                        referrerPolicy="no-referrer"
                       />
                       <button 
                         onClick={() => document.getElementById('ads-header-upload')?.click()}
@@ -1815,15 +2120,33 @@ ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(i
                   />
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {adFormData.images.map((url, idx) => (
-                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
+                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200 group">
                         <img src={url} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
-                        <button 
-                          type="button"
-                          onClick={() => setAdFormData({ ...adFormData, images: adFormData.images.filter((_, i) => i !== idx) })}
-                          className="absolute top-1 right-1 p-1 bg-white/80 rounded-full text-red-600 hover:bg-white"
-                        >
-                          <X size={12} />
-                        </button>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                          <button 
+                            type="button"
+                            onClick={() => moveImage('ad', idx, 'left')}
+                            disabled={idx === 0}
+                            className="p-1 bg-white/20 hover:bg-white/40 rounded text-white disabled:opacity-30"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => moveImage('ad', idx, 'right')}
+                            disabled={idx === adFormData.images.length - 1}
+                            className="p-1 bg-white/20 hover:bg-white/40 rounded text-white disabled:opacity-30"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setAdFormData({ ...adFormData, images: adFormData.images.filter((_, i) => i !== idx) })}
+                            className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-white"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {adFormData.images.length < 10 && (
@@ -2061,15 +2384,33 @@ ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(i
                   </div>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {formData.images.map((url, idx) => (
-                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200">
+                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-stone-200 group">
                         <img src={url} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
-                        <button 
-                          type="button"
-                          onClick={() => setFormData({ ...formData, images: formData.images.filter((_, i) => i !== idx) })}
-                          className="absolute top-1 right-1 p-1 bg-white/80 rounded-full text-red-600 hover:bg-white"
-                        >
-                          <X size={12} />
-                        </button>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                          <button 
+                            type="button"
+                            onClick={() => moveImage('product', idx, 'left')}
+                            disabled={idx === 0}
+                            className="p-1 bg-white/20 hover:bg-white/40 rounded text-white disabled:opacity-30"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => moveImage('product', idx, 'right')}
+                            disabled={idx === formData.images.length - 1}
+                            className="p-1 bg-white/20 hover:bg-white/40 rounded text-white disabled:opacity-30"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setFormData({ ...formData, images: formData.images.filter((_, i) => i !== idx) })}
+                            className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-white"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {formData.images.length < 10 && (

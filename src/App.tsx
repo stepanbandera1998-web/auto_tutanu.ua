@@ -16,7 +16,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Send,
-  Facebook
+  Facebook,
+  RefreshCw,
+  Package
 } from 'lucide-react';
 import { WheelLogo } from './components/WheelLogo';
 import { MultiSpokeLogo } from './components/MultiSpokeLogo';
@@ -351,6 +353,74 @@ export default function App() {
     return <AdminDashboard onLogout={() => setIsAdmin(false)} />;
   }
 
+  if (siteSettings?.maintenance_mode && !isAdmin) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-4 text-center">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md space-y-6"
+        >
+          <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-3xl flex items-center justify-center mx-auto">
+            <ShieldCheck size={40} />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight">Технічні роботи</h1>
+          <p className="text-stone-600">
+            Наразі ми оновлюємо наш сайт, щоб зробити його ще кращим для вас. 
+            Будь ласка, завітайте пізніше.
+          </p>
+          <div className="pt-8 border-t border-stone-200">
+            <p className="text-sm text-stone-400 mb-4">Адміністратор? Увійдіть для доступу:</p>
+            <button 
+              onClick={() => setShowAdminLogin(true)}
+              className="bg-stone-900 text-white px-8 py-3 rounded-2xl font-bold hover:bg-stone-800 transition-all"
+            >
+              Увійти в панель
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Admin Login Modal (Reusable) */}
+        <AnimatePresence>
+          {showAdminLogin && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowAdminLogin(false)}
+                className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="relative bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md"
+              >
+                <h3 className="text-2xl font-bold mb-6">Вхід для адміна</h3>
+                <form onSubmit={handleAdminLogin}>
+                  <input 
+                    type="password"
+                    placeholder="Введіть пароль..."
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-6 py-4 bg-stone-50 border border-stone-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-stone-900/5 mb-6"
+                  />
+                  <button 
+                    type="submit"
+                    className="w-full bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 transition-all"
+                  >
+                    Увійти
+                  </button>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-stone-50">
       <AnimatePresence>
@@ -528,7 +598,7 @@ export default function App() {
             </div>
 
             {/* Radius Filter */}
-            <div className="flex flex-wrap gap-4 mb-12 justify-center sm:justify-start">
+            <div className="flex flex-wrap gap-4 mb-12 justify-center sm:justify-start items-center">
               <button
                 onClick={() => setSelectedRadius(null)}
                 className={`w-14 h-14 rounded-full flex items-center justify-center text-xs font-bold transition-all border-2 ${
@@ -552,6 +622,16 @@ export default function App() {
                   {r}
                 </button>
               ))}
+              <div className="sm:ml-auto">
+                <button 
+                  onClick={fetchProducts}
+                  disabled={isLoadingProducts}
+                  className={`w-12 h-12 rounded-full flex items-center justify-center hover:bg-stone-100 transition-all ${isLoadingProducts ? 'animate-spin opacity-50' : 'text-stone-400 hover:text-stone-900'}`}
+                  title="Оновити каталог"
+                >
+                  <RefreshCw size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -563,7 +643,7 @@ export default function App() {
                     <div className="h-4 bg-stone-200 rounded w-1/2" />
                   </div>
                 ))
-              ) : (
+              ) : filteredProducts.length > 0 ? (
                 filteredProducts.map((product) => (
                   <motion.div 
                     key={product.id}
@@ -627,6 +707,21 @@ export default function App() {
                     </div>
                   </motion.div>
                 ))
+              ) : (
+                <div className="col-span-full py-20 text-center">
+                  <Package className="mx-auto mb-4 opacity-20" size={48} />
+                  <h3 className="text-xl font-semibold mb-2">Товарів не знайдено</h3>
+                  <p className="text-stone-500">Спробуйте змінити параметри пошуку або фільтрації</p>
+                  <button 
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedRadius(null);
+                    }}
+                    className="mt-4 text-stone-900 font-medium hover:underline"
+                  >
+                    Скинути фільтри
+                  </button>
+                </div>
               )}
             </div>
           </main>
@@ -872,6 +967,7 @@ export default function App() {
                             src={products.find(p => p.id === selectedAd.product_id)?.images?.[0] || 'https://picsum.photos/seed/car/200/200'} 
                             className="w-16 h-16 object-cover rounded-xl"
                             alt=""
+                            referrerPolicy="no-referrer"
                           />
                           <div>
                             <p className="font-bold text-sm">{products.find(p => p.id === selectedAd.product_id)?.name}</p>
@@ -1073,6 +1169,7 @@ export default function App() {
                     : 'https://picsum.photos/seed/car/800/1000'} 
                   className="w-full h-full object-contain p-2 sm:p-4"
                   alt={selectedProduct?.name || ''}
+                  referrerPolicy="no-referrer"
                 />
                 {selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 1 && (
                   <>

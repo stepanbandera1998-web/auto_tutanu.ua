@@ -45,5 +45,6 @@ export interface SiteSettings {
   banner_url?: string;
   catalog_header_image?: string;
   ads_header_image?: string;
+  maintenance_mode?: boolean;
   updated_at: string;
 }
