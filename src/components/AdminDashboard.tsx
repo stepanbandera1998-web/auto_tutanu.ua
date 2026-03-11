@@ -73,6 +73,14 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   });
 
   const [isRefreshingStats, setIsRefreshingStats] = useState(false);
+  const [dbHealth, setDbHealth] = useState<{
+    products: { exists: boolean; columns: string[] };
+    ads: { exists: boolean; columns: string[] };
+    reviews: { exists: boolean; columns: string[] };
+    stats: { exists: boolean; columns: string[] };
+    site_settings: { exists: boolean; columns: string[] };
+  } | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -81,13 +89,37 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     fetchStats();
     fetchSettings();
     
-    // Polling for general stats
-    const interval = setInterval(fetchStats, 10000);
+    // Опитування загальної статистики
+    const interval = setInterval(fetchStats, 30000); // Збільшуємо інтервал до 30с
     
     return () => {
       clearInterval(interval);
     };
   }, []);
+
+  const checkDatabaseHealth = async () => {
+    if (!supabase) return;
+    setIsCheckingHealth(true);
+    try {
+      const tables = ['products', 'ads', 'reviews', 'stats', 'site_settings'];
+      const health: any = {};
+
+      for (const table of tables) {
+        const { data, error } = await supabase.from(table).select('*').limit(1);
+        if (error) {
+          health[table] = { exists: false, columns: [] };
+        } else {
+          const columns = data && data.length > 0 ? Object.keys(data[0]) : [];
+          health[table] = { exists: true, columns };
+        }
+      }
+      setDbHealth(health);
+    } catch (err) {
+      console.error('Error checking DB health:', err);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   const fetchSettings = async () => {
     try {
@@ -100,7 +132,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (!error && data) {
         setSiteSettings(data);
       } else if (error && error.code === 'PGRST116') {
-        // No settings found, create default
+        // Налаштування не знайдено, створюємо за замовчуванням
         const { data: newData, error: createError } = await supabase
           .from('site_settings')
           .insert([{ id: '00000000-0000-0000-0000-000000000000' }])
@@ -109,7 +141,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         if (!createError) setSiteSettings(newData);
       }
     } catch (error) {
-      console.error('Error fetching settings:', error);
+      console.error('Помилка отримання налаштувань:', error);
     }
   };
 
@@ -191,7 +223,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   const fetchStats = async (isManual = false) => {
     if (isManual) {
-      console.log('fetchStats called manually');
       setIsRefreshingStats(true);
     }
     try {
@@ -200,50 +231,48 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       let mostViewed: any[] = [];
       let clicks: { [key: string]: number } = {};
 
-      // Fetch everything from Supabase (Primary Source)
       if (supabase) {
         try {
-          // Get products for views and most viewed
-          const { data: productsData, error: productsError } = await supabase
+          // 1. Отримуємо ТІЛЬКИ ТОП-5 товарів за переглядами
+          const { data: popularData, error: pError } = await supabase
             .from('products')
-            .select('id, name, views')
-            .order('views', { ascending: false });
+            .select('id, name, views, sku')
+            .order('views', { ascending: false })
+            .limit(5);
           
-          if (!productsError && productsData) {
-            totalViews = productsData.reduce((acc, p) => acc + (p.views || 0), 0);
-            mostViewed = productsData.slice(0, 5);
+          if (!pError && popularData) {
+            mostViewed = popularData.map(p => ({
+              ...p,
+              name: `${p.name} [${p.sku || '---'}]`
+            }));
           }
 
-          // Get total visits from Supabase stats table
-          const { count: supabaseVisits, error: visitsError } = await supabase
+          // 2. Отримуємо суму переглядів
+          const { data: viewsSumData, error: sumError } = await supabase
+            .from('products')
+            .select('views');
+          
+          if (!sumError && viewsSumData) {
+            totalViews = viewsSumData.reduce((acc, p) => acc + (p.views || 0), 0);
+          }
+
+          // 3. Отримуємо статистику одним запитом
+          const { data: statsData, error: statsError } = await supabase
             .from('stats')
-            .select('*', { count: 'exact', head: true })
-            .eq('type', 'visit');
+            .select('type');
           
-          if (!visitsError && supabaseVisits !== null) {
-            visitsCount = supabaseVisits;
-          }
-
-          // Get clicks from Supabase stats table - Optimized to fetch only necessary types
-          // Instead of fetching all rows, we fetch counts for common types
-          const clickTypes = [
-            'catalog', 'reviews', 'ads', 'instagram', 'tiktok', 'facebook', 
-            'contact_telegram', 'contact_whatsapp', 'contact_call', 
-            'ad_telegram', 'ad_whatsapp', 'catalog_mobile', 'reviews_mobile', 'ads_mobile'
-          ];
-          
-          for (const type of clickTypes) {
-            const { count, error } = await supabase
-              .from('stats')
-              .select('*', { count: 'exact', head: true })
-              .eq('type', `click_${type}`);
-            
-            if (!error && count !== null) {
-              clicks[type] = count;
-            }
+          if (!statsError && statsData) {
+            statsData.forEach(row => {
+              if (row.type === 'visit') {
+                visitsCount++;
+              } else if (row.type.startsWith('click_')) {
+                const type = row.type.replace('click_', '');
+                clicks[type] = (clicks[type] || 0) + 1;
+              }
+            });
           }
         } catch (err: any) {
-          console.warn('Supabase stats fetch error:', err.message);
+          console.warn('Помилка отримання статистики Supabase:', err.message);
         }
       }
       
@@ -260,9 +289,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       }
     } catch (error) {
       console.error('Error in fetchStats:', error);
-      if (isManual) {
-        showNotification('Помилка при оновленні статистики', 'error');
-      }
     } finally {
       if (isManual) {
         setIsRefreshingStats(false);
@@ -274,38 +300,38 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     showConfirm('Ви впевнені, що хочете обнулити всю статистику? Це дію неможливо скасувати.', async () => {
       setIsRefreshingStats(true);
       try {
-        if (!supabase) throw new Error('Supabase not configured');
+        if (!supabase) throw new Error('Supabase не налаштовано');
 
-        console.log('Resetting product views...');
-        // 1. Reset product views
+        console.log('Скидання переглядів товарів...');
+        // 1. Скидання переглядів товарів
         const { error: pError } = await supabase
           .from('products')
           .update({ views: 0 })
-          .not('id', 'is', null); // This works for both UUID and numeric IDs to target all rows
+          .not('id', 'is', null); // Це працює як для UUID, так і для числових ID, щоб охопити всі рядки
 
         if (pError) {
-          console.error('Product views reset error:', pError);
+          console.error('Помилка скидання переглядів товарів:', pError);
           throw new Error(`Помилка скидання переглядів товарів: ${pError.message}`);
         }
 
-        console.log('Deleting visit stats...');
-        // 2. Delete all visit stats
-        // We use a broad filter to ensure we target all visit records
+        console.log('Видалення статистики візитів...');
+        // 2. Видалення всієї статистики візитів
+        // Ми використовуємо широкий фільтр, щоб охопити всі записи візитів
         const { error: sError } = await supabase
           .from('stats')
           .delete()
           .or('type.eq.visit,type.like.click_%');
 
         if (sError) {
-          console.error('Visit stats delete error:', sError);
+          console.error('Помилка видалення статистики візитів:', sError);
           throw new Error(`Помилка видалення візитів: ${sError.message}`);
         }
 
         showNotification('Статистику обнулено успішно');
-        // Wait a bit before fetching to allow DB to settle
+        // Зачекаємо трохи перед отриманням нових даних, щоб БД встигла оновитися
         setTimeout(() => fetchStats(), 500);
       } catch (error: any) {
-        console.error('Error resetting stats:', error);
+        console.error('Помилка при обнуленні статистики:', error);
         showNotification(error.message || 'Помилка при обнуленні статистики', 'error');
       } finally {
         setIsRefreshingStats(false);
@@ -314,6 +340,31 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   };
 
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const generateNextSku = (currentProducts: Product[]) => {
+    if (currentProducts.length === 0) return '001';
+
+    // Отримуємо всі SKU
+    const skus = currentProducts.map(p => p.sku || '').filter(Boolean);
+    if (skus.length === 0) return '001';
+
+    // Спробуємо знайти найбільше число в будь-якому SKU
+    let maxNum = 0;
+    
+    skus.forEach(sku => {
+      // Шукаємо всі послідовності цифр
+      const numbers = sku.match(/\d+/g);
+      if (numbers) {
+        numbers.forEach(n => {
+          const val = parseInt(n);
+          if (val > maxNum) maxNum = val;
+        });
+      }
+    });
+
+    const nextNum = maxNum + 1;
+    return nextNum.toString().padStart(3, '0');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -324,14 +375,20 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (isNaN(price)) throw new Error('Ціна має бути числом');
 
       let success = false;
-      // Generate 3-digit numeric SKU if not provided
-      let sku = formData.sku;
+      // Generate SKU if not provided
+      let sku = formData.sku.trim();
       if (!sku) {
-        const numericSkus = products
-          .map(p => parseInt(p.sku))
-          .filter(n => !isNaN(n));
-        const nextSku = numericSkus.length > 0 ? Math.max(...numericSkus) + 1 : 1;
-        sku = nextSku.toString().padStart(3, '0');
+        sku = generateNextSku(products);
+      }
+
+      // Check for duplicate SKU (excluding current product if editing)
+      const isDuplicateSku = products.some(p => 
+        p.sku.toUpperCase() === sku.toUpperCase() && 
+        (!editingProduct || p.id !== editingProduct.id)
+      );
+      
+      if (isDuplicateSku) {
+        throw new Error(`Товар з кодом "${sku}" вже існує. Будь ласка, використайте інший код.`);
       }
 
       const productData: any = {
@@ -361,37 +418,41 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           result = await supabase
             .from('products')
             .update(productData)
-            .eq('id', editingProduct.id);
+            .eq('id', editingProduct.id)
+            .select('*'); // Отримуємо повний об'єкт
         } else {
           result = await supabase
             .from('products')
-            .insert([productData]);
+            .insert([productData])
+            .select('*'); // Отримуємо повний об'єкт
         }
         
-        if (result.error) {
-          // Check if the error is due to missing columns
-          if (result.error.message?.includes('column "is_sale" does not exist') || 
-              result.error.message?.includes('column "old_price" does not exist') ||
-              result.error.message?.includes('column "radius" does not exist') ||
-              result.error.message?.includes('radius')) {
-            throw new Error('У вашій базі даних Supabase відсутня колонка "radius" (або "is_sale"/"old_price"). Будь ласка, додайте колонку "radius" (тип text) до таблиці "products" у панелі Supabase SQL Editor або зверніться до розробника.');
+        if (result.error) throw result.error;
+        
+        const returnedData = result.data?.[0];
+        if (returnedData) {
+          if (editingProduct) {
+            setProducts(prev => prev.map(p => p.id === returnedData.id ? returnedData : p));
+          } else {
+            setProducts(prev => [returnedData, ...prev]);
           }
-          throw result.error;
+        } else {
+          // Якщо select() не повернув дані, оновлюємо весь список
+          await fetchProducts();
         }
         
         showNotification(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
         setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '', radius: '' });
-        fetchProducts();
       } catch (error: any) {
-        console.error('Error submitting product:', error);
+        console.error('Помилка при відправці товару:', error);
         showNotification('Помилка: ' + error.message, 'error');
       } finally {
         setIsSubmitting(false);
       }
     } catch (error: any) {
-      console.error('Error in handleSubmit:', error);
+      console.error('Помилка у handleSubmit:', error);
       showNotification('Помилка: ' + error.message, 'error');
       setIsSubmitting(false);
     }
@@ -421,12 +482,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           .from('ads')
           .update(adData)
           .eq('id', editingAd.id);
+        
         if (error) throw error;
+        
+        setAds(prev => prev.map(a => a.id === editingAd.id ? { ...a, ...adData } as Ad : a));
         showNotification('Оголошення оновлено!');
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('ads')
-          .insert([adData]);
+          .insert([adData])
+          .select('id, created_at');
         
         if (error) {
           if (error.message?.includes('column "is_placeholder" does not exist')) {
@@ -437,15 +502,21 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           }
           throw error;
         }
+
+        if (data?.[0]) {
+          const fullAd = { ...adData, ...data[0] } as Ad;
+          setAds(prev => [fullAd, ...prev]);
+        } else {
+          fetchAds();
+        }
         showNotification('Оголошення опубліковано!');
       }
       
       setIsAddingAd(false);
       setEditingAd(null);
       setAdFormData({ title: '', description: '', price: '', phone: '', images: [], is_placeholder: false, product_id: '' });
-      fetchAds();
     } catch (error: any) {
-      console.error('Error submitting ad:', error);
+      console.error('Помилка при відправці оголошення:', error);
       showNotification('Помилка: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
@@ -455,16 +526,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleDelete = async (id: number) => {
     showConfirm('Ви впевнені?', async () => {
       try {
-        if (!supabase) throw new Error('Supabase not configured');
+        if (!supabase) throw new Error('Supabase не налаштовано');
         const { error } = await supabase
           .from('products')
           .delete()
           .eq('id', id);
         if (error) throw error;
-        fetchProducts();
+        setProducts(prev => prev.filter(p => p.id !== id));
         showNotification('Товар видалено');
       } catch (error: any) {
-        console.error('Error deleting product:', error);
+        console.error('Помилка при видаленні товару:', error);
         showNotification('Помилка при видаленні: ' + error.message, 'error');
       }
     });
@@ -473,7 +544,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleDeleteAd = async (id: number | string) => {
     showConfirm('Ви впевнені?', async () => {
       try {
-        if (!supabase) throw new Error('Supabase not configured');
+        if (!supabase) throw new Error('Supabase не налаштовано');
         
         const { data, error } = await supabase
           .from('ads')
@@ -486,11 +557,11 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         if (!data || data.length === 0) {
           showNotification('Помилка: Оголошення не видалено. Перевірте налаштування прав доступу (RLS) у Supabase для таблиці "ads".', 'error');
         } else {
-          fetchAds();
+          setAds(prev => prev.filter(a => a.id !== id));
           showNotification('Оголошення видалено');
         }
       } catch (error: any) {
-        console.error('Error deleting ad:', error);
+        console.error('Помилка при видаленні оголошення:', error);
         showNotification('Помилка при видаленні: ' + (error.message || 'Невідома помилка'), 'error');
       }
     });
@@ -499,7 +570,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleDeleteReview = async (id: number) => {
     showConfirm('Ви впевнені, що хочете видалити цей відгук?', async () => {
       try {
-        if (!supabase) throw new Error('Supabase not configured');
+        if (!supabase) throw new Error('Supabase не налаштовано');
         const { error } = await supabase
           .from('reviews')
           .delete()
@@ -508,7 +579,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         fetchReviews();
         showNotification('Відгук видалено');
       } catch (error: any) {
-        console.error('Error deleting review:', error);
+        console.error('Помилка при видаленні відгуку:', error);
         showNotification('Помилка при видаленні: ' + error.message, 'error');
       }
     });
@@ -517,7 +588,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const handleSeedReviews = async () => {
     showConfirm('Ви впевнені, що хочете згенерувати 50 випадкових відгуків? Це може зайняти деякий час.', async () => {
       setIsSubmitting(true);
-      console.log('Starting to seed reviews...');
+      console.log('Початок генерації відгуків...');
       try {
         const names = [
           "Олександр", "Марія", "Іван", "Олена", "Дмитро", "Тетяна", "Андрій", "Оксана", "Сергій", "Наталія",
@@ -564,15 +635,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         if (supabase) {
           const { error } = await supabase.from('reviews').insert(newReviews);
           if (error) throw error;
-          console.log('Successfully seeded reviews to Supabase');
+          console.log('Відгуки успішно додані до Supabase');
         } else {
-          throw new Error('Supabase not configured');
+          throw new Error('Supabase не налаштовано');
         }
         
         showNotification('50 відгуків успішно згенеровано!');
         fetchReviews();
       } catch (error: any) {
-        console.error('Error seeding reviews:', error);
+        console.error('Помилка при генерації відгуків:', error);
         showNotification('Помилка при генерації: ' + error.message, 'error');
       } finally {
         setIsSubmitting(false);
@@ -600,9 +671,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       setIsOptimizing(true);
       setOptimizationProgress(0);
       try {
-        if (!supabase) throw new Error('Supabase not configured');
+        if (!supabase) throw new Error('Supabase не налаштовано');
 
-        // Optimize Products
+        // Оптимізація товарів
         const { data: productsData, error: pError } = await supabase.from('products').select('*');
         if (pError) throw pError;
 
@@ -611,9 +682,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         if (productsData) {
           for (const product of productsData) {
+            if (!Array.isArray(product.images)) {
+              processedItems++;
+              continue;
+            }
             const optimizedImages = await Promise.all(
               product.images.map(async (img: string) => {
-                if (img.startsWith('data:image')) {
+                if (img && typeof img === 'string' && img.startsWith('data:image')) {
                   return await compressImage(img);
                 }
                 return img;
@@ -630,15 +705,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           }
         }
 
-        // Optimize Ads
+        // Оптимізація оголошень
         const { data: adsData, error: aError } = await supabase.from('ads').select('*');
         if (aError) throw aError;
 
         if (adsData) {
           for (const ad of adsData) {
+            if (!Array.isArray(ad.images)) {
+              processedItems++;
+              continue;
+            }
             const optimizedImages = await Promise.all(
               ad.images.map(async (img: string) => {
-                if (img.startsWith('data:image')) {
+                if (img && typeof img === 'string' && img.startsWith('data:image')) {
                   return await compressImage(img);
                 }
                 return img;
@@ -659,7 +738,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         fetchProducts();
         fetchAds();
       } catch (error: any) {
-        console.error('Optimization error:', error);
+        console.error('Помилка оптимізації:', error);
         showNotification('Помилка оптимізації: ' + error.message, 'error');
       } finally {
         setIsOptimizing(false);
@@ -723,7 +802,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           reader.readAsDataURL(file);
         });
 
-        const compressedBase64 = await compressImage(base64, 1024, 1024, 0.6);
+        const compressedBase64 = await compressImage(base64, 800, 800, 0.5);
         
         if (type === 'product') {
           setFormData(prev => {
@@ -913,7 +992,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <img 
-                              src={product.images[0] || 'https://picsum.photos/seed/car/200/200'} 
+                              src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/200/200'} 
                               className="w-10 h-10 rounded-lg object-cover"
                               alt=""
                               referrerPolicy="no-referrer"
@@ -1228,7 +1307,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     <div key={item.id} className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-stone-900' : 'bg-stone-300'}`} />
-                        <span className="text-stone-600 truncate max-w-[150px]">{item.name}</span>
+                        <span className="text-stone-600 truncate max-w-[150px]">{item.name} <span className="text-[10px] text-stone-400 font-mono">({item.sku})</span></span>
                       </div>
                       <span className="font-mono font-medium">{item.views}</span>
                     </div>
@@ -1392,6 +1471,141 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     )}
                   </div>
                 </div>
+              </div>
+
+              <hr className="border-stone-100" />
+
+              {/* Database Health Check */}
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-bold flex items-center gap-2">
+                    <ShieldCheck size={20} className="text-emerald-600" /> Стан бази даних Supabase
+                  </h3>
+                  <button 
+                    onClick={checkDatabaseHealth}
+                    disabled={isCheckingHealth}
+                    className="text-xs font-bold text-stone-500 hover:text-stone-900 flex items-center gap-1"
+                  >
+                    <RefreshCw size={14} className={isCheckingHealth ? 'animate-spin' : ''} /> Оновити статус
+                  </button>
+                </div>
+
+                {dbHealth ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Object.entries(dbHealth).map(([table, status]: [string, any]) => {
+                      const requiredColumns: { [key: string]: string[] } = {
+                        products: ['id', 'name', 'description', 'price', 'images', 'sku', 'radius', 'is_sale', 'old_price'],
+                        ads: ['id', 'title', 'description', 'price', 'phone', 'images', 'is_placeholder', 'product_id'],
+                        reviews: ['id', 'user_name', 'rating', 'comment', 'created_at'],
+                        stats: ['id', 'type', 'created_at'],
+                        site_settings: ['id', 'banner_url', 'catalog_header_image', 'ads_header_image']
+                      };
+
+                      const missingColumns = requiredColumns[table]?.filter(col => !status.columns.includes(col)) || [];
+                      const isHealthy = status.exists && missingColumns.length === 0;
+
+                      return (
+                        <div key={table} className={`p-4 rounded-2xl border ${isHealthy ? 'border-emerald-100 bg-emerald-50/30' : 'border-red-100 bg-red-50/30'}`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="font-bold text-sm capitalize">{table}</span>
+                            <div className={`w-2 h-2 rounded-full ${isHealthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                          </div>
+                          {!status.exists ? (
+                            <p className="text-[10px] text-red-600 font-medium">Таблиця відсутня</p>
+                          ) : missingColumns.length > 0 ? (
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-red-600 font-medium">Відсутні колонки:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {missingColumns.map(col => (
+                                  <span key={col} className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-mono">{col}</span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-emerald-600 font-medium">Все в порядку</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                    <p className="text-stone-400 text-sm">Натисніть "Оновити статус" для перевірки бази даних</p>
+                  </div>
+                )}
+
+                {dbHealth && Object.values(dbHealth).some((s: any) => !s.exists || (s.columns.length < 5)) && (
+                  <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100">
+                    <h4 className="font-bold text-amber-800 mb-2 flex items-center gap-2">
+                      <Settings size={18} /> Як виправити помилки?
+                    </h4>
+                    <p className="text-sm text-amber-700 mb-4">
+                      Скопіюйте цей SQL-запит та виконайте його у <b>SQL Editor</b> вашої панелі Supabase:
+                    </p>
+                    <div className="bg-stone-900 p-4 rounded-xl overflow-x-auto">
+                      <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed">
+{`-- Створення таблиць та додавання відсутніх колонок
+CREATE TABLE IF NOT EXISTS products (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL NOT NULL,
+  images TEXT[] DEFAULT '{}',
+  sku TEXT UNIQUE,
+  radius TEXT,
+  is_sale BOOLEAN DEFAULT FALSE,
+  old_price DECIMAL,
+  views BIGINT DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ads (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL NOT NULL,
+  phone TEXT NOT NULL,
+  images TEXT[] DEFAULT '{}',
+  is_placeholder BOOLEAN DEFAULT FALSE,
+  product_id BIGINT REFERENCES products(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  rating INTEGER NOT NULL,
+  comment TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS stats (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  type TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS site_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  banner_url TEXT,
+  catalog_header_image TEXT,
+  ads_header_image TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Додавання колонок, якщо таблиці вже існують
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS radius TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS old_price DECIMAL;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS views BIGINT DEFAULT 0;
+
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS is_placeholder BOOLEAN DEFAULT FALSE;
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(id);`}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <hr className="border-stone-100" />
@@ -1719,7 +1933,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const generated = generateNextSku(products);
+                          setFormData({ ...formData, sku: generated });
+                        }}
+                        className="text-[10px] font-bold text-stone-400 hover:text-stone-900 uppercase tracking-wider"
+                      >
+                        Згенерувати
+                      </button>
+                    </div>
                     <input 
                       id="product_sku"
                       name="sku"
@@ -1727,7 +1953,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       value={formData.sku}
                       onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
                       className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none font-mono"
-                      placeholder="Автоматично (напр. AT-X123)"
+                      placeholder="Автоматично (напр. 001)"
                     />
                   </div>
                   <div className="space-y-2">

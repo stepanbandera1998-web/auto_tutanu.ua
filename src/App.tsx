@@ -69,29 +69,38 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!isAdmin) {
+      fetchProducts();
+      fetchAds();
+      fetchReviews();
+      fetchSettings();
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
     const checkConnection = async () => {
       if (!supabase) {
         setSupabaseStatus('not-configured');
         return;
       }
       try {
-        // Test connection by fetching one ID from reviews
+        // Перевірка з'єднання шляхом отримання одного ID з відгуків
         const { error } = await supabase.from('reviews').select('id').limit(1);
         if (error) {
-          // If the error is "relation does not exist", the table is missing but connection is OK
+          // Якщо помилка "relation does not exist", таблиця відсутня, але з'єднання в порядку
           if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
-            console.log('Supabase connected, but tables are missing');
+            console.log('Supabase підключено, але таблиці відсутні');
             setSupabaseStatus('connected');
           } else {
-            console.warn('Supabase connection test returned error:', error);
+            console.warn('Тест з\'єднання Supabase повернув помилку:', error);
             setSupabaseStatus('error');
           }
         } else {
-          console.log('Supabase connection test successful');
+          console.log('Тест з\'єднання Supabase успішний');
           setSupabaseStatus('connected');
         }
       } catch (err) {
-        console.error('Supabase connection test failed:', err);
+        console.error('Тест з\'єднання Supabase не вдався:', err);
         setSupabaseStatus('error');
       }
     };
@@ -99,13 +108,13 @@ export default function App() {
     const init = async () => {
       setIsInitialLoading(true);
       
-      // Set a safety timeout to hide loading screen even if some requests hang
+      // Встановлюємо таймер безпеки, щоб приховати екран завантаження, навіть якщо деякі запити зависнуть
       const timeoutId = setTimeout(() => {
         if (isInitialLoading) {
-          console.warn('Initial loading timed out. Showing app anyway.');
+          console.warn('Початкове завантаження перевищило час очікування. Показуємо додаток у будь-якому випадку.');
           setIsInitialLoading(false);
         }
-      }, 15000); // 15 seconds timeout
+      }, 15000); // 15 секунд таймаут
 
       try {
         await Promise.all([
@@ -116,7 +125,7 @@ export default function App() {
           fetchSettings()
         ]);
       } catch (error) {
-        console.error('Initial fetch error:', error);
+        console.error('Помилка початкового завантаження:', error);
       } finally {
         clearTimeout(timeoutId);
         setIsInitialLoading(false);
@@ -125,7 +134,7 @@ export default function App() {
     
     init();
     
-    // Log visit to local server (only if not on a static host like Vercel)
+    // Логування візиту на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
     const logVisit = async () => {
       const isStaticHost = window.location.hostname.includes('vercel.app');
       if (isStaticHost) return;
@@ -137,17 +146,17 @@ export default function App() {
           sessionStorage.setItem('visited', 'true');
         }
       } catch (err) {
-        console.warn('Could not log visit to server:', err);
+        console.warn('Не вдалося залогувати візит на сервер:', err);
       }
     };
     logVisit();
 
     const logClick = async (type: string) => {
-      if (supabase) {
+      if (supabase && supabaseStatus === 'connected') {
         try {
           await supabase.from('stats').insert([{ type: `click_${type}` }]);
         } catch (err) {
-          console.warn(`Error logging click ${type}:`, err);
+          // Silent fail for stats
         }
       }
     };
@@ -327,9 +336,11 @@ export default function App() {
   };
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
+    const search = searchQuery.toLowerCase();
+    const matchesSearch = !search || 
+      (p.name || '').toLowerCase().includes(search) ||
+      (p.description || '').toLowerCase().includes(search) ||
+      (p.sku || '').toLowerCase().includes(search);
     
     const matchesRadius = !selectedRadius || p.radius === selectedRadius;
     
@@ -561,17 +572,17 @@ export default function App() {
                       setSelectedProduct(product);
                       setCurrentImageIndex(0);
                       
-                      // Log view to local server (only if not on a static host like Vercel)
+                      // Логування перегляду на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
                       const isStaticHost = window.location.hostname.includes('vercel.app');
                       if (!isStaticHost) {
                         fetch('/api/view', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ productId: product.id })
-                        }).catch(err => console.warn('Error logging view to server:', err));
+                        }).catch(err => console.warn('Помилка логування перегляду на сервер:', err));
                       }
 
-                      // Update views in Supabase
+                      // Оновлення переглядів у Supabase
                       if (supabase) {
                         try {
                           await supabase
@@ -579,7 +590,7 @@ export default function App() {
                             .update({ views: (product.views || 0) + 1 })
                             .eq('id', product.id);
                         } catch (err) {
-                          console.error('Error updating views:', err);
+                          console.error('Помилка оновлення переглядів:', err);
                         }
                       }
                     }}
@@ -587,9 +598,9 @@ export default function App() {
                   >
                     <div className="aspect-square rounded-3xl overflow-hidden bg-white mb-4 relative border border-stone-100">
                       <img 
-                        src={product.images[0] || 'https://picsum.photos/seed/car/800/1000'} 
+                        src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/800/1000'} 
                         className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
-                        alt={product.name}
+                        alt={product.name || 'Товар'}
                         referrerPolicy="no-referrer"
                         loading="lazy"
                       />
@@ -858,7 +869,7 @@ export default function App() {
                       {products.find(p => p.id === selectedAd.product_id) ? (
                         <div className="flex items-center gap-4">
                           <img 
-                            src={products.find(p => p.id === selectedAd.product_id)?.images[0]} 
+                            src={products.find(p => p.id === selectedAd.product_id)?.images?.[0] || 'https://picsum.photos/seed/car/200/200'} 
                             className="w-16 h-16 object-cover rounded-xl"
                             alt=""
                           />
@@ -1057,11 +1068,13 @@ export default function App() {
             >
               <div className="md:w-1/2 relative bg-white h-[250px] sm:h-[400px] md:h-auto border-b md:border-b-0 md:border-r border-stone-100">
                 <img 
-                  src={selectedProduct.images[currentImageIndex] || 'https://picsum.photos/seed/car/800/1000'} 
+                  src={selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 0
+                    ? selectedProduct.images[currentImageIndex] 
+                    : 'https://picsum.photos/seed/car/800/1000'} 
                   className="w-full h-full object-contain p-2 sm:p-4"
-                  alt=""
+                  alt={selectedProduct?.name || ''}
                 />
-                {selectedProduct.images.length > 1 && (
+                {selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 1 && (
                   <>
                     <button 
                       onClick={(e) => {
@@ -1084,7 +1097,7 @@ export default function App() {
                   </>
                 )}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
-                  {selectedProduct.images.map((_, idx) => (
+                  {selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.map((_, idx) => (
                     <div 
                       key={idx}
                       className={`w-2 h-2 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white w-6' : 'bg-white/40'}`}
