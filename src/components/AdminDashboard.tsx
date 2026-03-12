@@ -723,69 +723,83 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       try {
         if (!supabase) throw new Error('Supabase не налаштовано');
 
-        // Оптимізація товарів
-        const { data: productsData, error: pError } = await supabase.from('products').select('*');
-        if (pError) throw pError;
-
-        const totalItems = (productsData?.length || 0) + (ads.length || 0);
+        // Отримуємо загальну кількість для прогресу
+        const { count: productsCount } = await supabase.from('products').select('*', { count: 'exact', head: true });
+        const { count: adsCount } = await supabase.from('ads').select('*', { count: 'exact', head: true });
+        
+        const totalItems = (productsCount || 0) + (adsCount || 0);
         let processedItems = 0;
 
-        if (productsData) {
-          for (const product of productsData) {
-            if (!Array.isArray(product.images)) {
-              processedItems++;
-              continue;
-            }
-            const optimizedImages = await Promise.all(
-              product.images.map(async (img: string) => {
-                if (img && typeof img === 'string' && img.startsWith('data:image')) {
-                  return await compressImage(img);
-                }
-                return img;
-              })
-            );
-
-            await supabase
+        // Оптимізація товарів частинами
+        const BATCH_SIZE = 10;
+        
+        if (productsCount && productsCount > 0) {
+          for (let i = 0; i < productsCount; i += BATCH_SIZE) {
+            const { data: productsBatch, error: pError } = await supabase
               .from('products')
-              .update({ images: optimizedImages })
-              .eq('id', product.id);
+              .select('id, images')
+              .range(i, i + BATCH_SIZE - 1);
             
-            processedItems++;
-            setOptimizationProgress(Math.round((processedItems / totalItems) * 100));
+            if (pError) throw pError;
+            if (!productsBatch) break;
+
+            for (const product of productsBatch) {
+              if (Array.isArray(product.images) && product.images.length > 0) {
+                const optimizedImages = await Promise.all(
+                  product.images.map(async (img: string) => {
+                    if (img && typeof img === 'string' && img.startsWith('data:image')) {
+                      return await compressImage(img);
+                    }
+                    return img;
+                  })
+                );
+
+                await supabase
+                  .from('products')
+                  .update({ images: optimizedImages })
+                  .eq('id', product.id);
+              }
+              processedItems++;
+              setOptimizationProgress(Math.round((processedItems / totalItems) * 100));
+            }
           }
         }
 
-        // Оптимізація оголошень
-        const { data: adsData, error: aError } = await supabase.from('ads').select('*');
-        if (aError) throw aError;
-
-        if (adsData) {
-          for (const ad of adsData) {
-            if (!Array.isArray(ad.images)) {
-              processedItems++;
-              continue;
-            }
-            const optimizedImages = await Promise.all(
-              ad.images.map(async (img: string) => {
-                if (img && typeof img === 'string' && img.startsWith('data:image')) {
-                  return await compressImage(img);
-                }
-                return img;
-              })
-            );
-
-            await supabase
+        // Оптимізація оголошень частинами
+        if (adsCount && adsCount > 0) {
+          for (let i = 0; i < adsCount; i += BATCH_SIZE) {
+            const { data: adsBatch, error: aError } = await supabase
               .from('ads')
-              .update({ images: optimizedImages })
-              .eq('id', ad.id);
+              .select('id, images')
+              .range(i, i + BATCH_SIZE - 1);
             
-            processedItems++;
-            setOptimizationProgress(Math.round((processedItems / totalItems) * 100));
+            if (aError) throw aError;
+            if (!adsBatch) break;
+
+            for (const ad of adsBatch) {
+              if (Array.isArray(ad.images) && ad.images.length > 0) {
+                const optimizedImages = await Promise.all(
+                  ad.images.map(async (img: string) => {
+                    if (img && typeof img === 'string' && img.startsWith('data:image')) {
+                      return await compressImage(img);
+                    }
+                    return img;
+                  })
+                );
+
+                await supabase
+                  .from('ads')
+                  .update({ images: optimizedImages })
+                  .eq('id', ad.id);
+              }
+              processedItems++;
+              setOptimizationProgress(Math.round((processedItems / totalItems) * 100));
+            }
           }
         }
 
         showNotification('Базу даних оптимізовано!');
-        fetchProducts();
+        fetchProducts(0);
         fetchAds();
       } catch (error: any) {
         console.error('Помилка оптимізації:', error);
