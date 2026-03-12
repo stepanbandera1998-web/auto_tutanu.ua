@@ -1143,8 +1143,11 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                <label htmlFor="admin_search" className="sr-only">Пошук товару</label>
                 <input 
                   type="text"
+                  id="admin_search"
+                  name="admin_search"
                   placeholder="Пошук товару за назвою або кодом..."
                   value={adminSearchQuery}
                   onChange={(e) => setAdminSearchQuery(e.target.value)}
@@ -1186,6 +1189,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                           <th className="px-6 py-4 w-10">
                             <input 
                               type="checkbox"
+                              id="bulk_select_all"
+                              name="bulk_select_all"
+                              aria-label="Вибрати всі товари"
                               checked={selectedProductIds.length === filteredAdminProducts.length && filteredAdminProducts.length > 0}
                               onChange={(e) => {
                                 if (e.target.checked) {
@@ -1712,6 +1718,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
                 <button 
                   onClick={() => handleSaveSettings({ maintenance_mode: !siteSettings?.maintenance_mode })}
+                  aria-label={siteSettings?.maintenance_mode ? 'Вимкнути режим обслуговування' : 'Увімкнути режим обслуговування'}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${siteSettings?.maintenance_mode ? 'bg-amber-600' : 'bg-stone-200'}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${siteSettings?.maintenance_mode ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -2091,35 +2098,35 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
               </div>
               <form onSubmit={handleAdSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Заголовок</label>
-                    <input 
-                      required
-                      id="ad_title"
-                      name="title"
-                      type="text"
-                      value={adFormData.title}
-                      onChange={e => setAdFormData({ ...adFormData, title: e.target.value })}
-                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Ціна (грн)</label>
-                    <input 
-                      required
-                      id="ad_price"
-                      name="price"
-                      type="number"
-                      value={adFormData.price}
-                      onChange={e => setAdFormData({ ...adFormData, price: e.target.value })}
-                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <label htmlFor="ad_title" className="text-sm font-medium text-stone-700">Заголовок</label>
+                  <input 
+                    required
+                    id="ad_title"
+                    name="title"
+                    type="text"
+                    value={adFormData.title}
+                    onChange={e => setAdFormData({ ...adFormData, title: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="ad_price" className="text-sm font-medium text-stone-700">Ціна (грн)</label>
+                  <input 
+                    required
+                    id="ad_price"
+                    name="price"
+                    type="number"
+                    value={adFormData.price}
+                    onChange={e => setAdFormData({ ...adFormData, price: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                  />
+                </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Телефон власника</label>
+                    <label htmlFor="ad_phone" className="text-sm font-medium text-stone-700">Телефон власника</label>
                     <input 
                       required
                       id="ad_phone"
@@ -2131,7 +2138,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Прив'язати товар (опціонально)</label>
+                    <label htmlFor="ad_product_id" className="text-sm font-medium text-stone-700">Прив'язати товар (опціонально)</label>
                     <select 
                       id="ad_product_id"
                       name="product_id"
@@ -2160,7 +2167,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-stone-700">Опис</label>
+                  <label htmlFor="ad_description" className="text-sm font-medium text-stone-700">Опис</label>
                   <textarea 
                     required
                     id="ad_description"
@@ -2265,7 +2272,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
               <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Назва товару</label>
+                    <label htmlFor="product_name" className="text-sm font-medium text-stone-700">Назва товару</label>
                     <input 
                       required
                       id="product_name"
@@ -2278,7 +2285,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Ціна (грн)</label>
+                    <label htmlFor="product_price" className="text-sm font-medium text-stone-700">Ціна (грн)</label>
                     <input 
                       required
                       id="product_price"
@@ -2306,7 +2313,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                   </div>
                   {formData.is_sale && (
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-stone-700">Стара ціна (грн)</label>
+                      <label htmlFor="product_old_price" className="text-sm font-medium text-stone-700">Стара ціна (грн)</label>
                       <input 
                         id="product_old_price"
                         name="old_price"
@@ -2323,7 +2330,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <label className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
+                      <label htmlFor="product_sku" className="text-sm font-medium text-stone-700">Код товару (SKU)</label>
                       <button 
                         type="button"
                         onClick={() => {
@@ -2346,7 +2353,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-700">Радіус коліс</label>
+                    <label htmlFor="product_radius" className="text-sm font-medium text-stone-700">Радіус коліс</label>
                     <select 
                       id="product_radius"
                       name="radius"
@@ -2364,7 +2371,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
 
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-stone-700">Опис</label>
+                    <label htmlFor="product_description" className="text-sm font-medium text-stone-700">Опис</label>
                     <button 
                       type="button"
                       disabled={isGenerating}
@@ -2431,6 +2438,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                   />
 
                   <div className="flex gap-2">
+                    <label htmlFor="product_image_url" className="sr-only">URL зображення</label>
                     <input 
                       id="product_image_url"
                       name="image_url"

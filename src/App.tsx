@@ -419,13 +419,18 @@ export default function App() {
               >
                 <h3 className="text-2xl font-bold mb-6">Вхід для адміна</h3>
                 <form onSubmit={handleAdminLogin}>
-                  <input 
-                    type="password"
-                    placeholder="Введіть пароль..."
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-6 py-4 bg-stone-50 border border-stone-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-stone-900/5 mb-6"
-                  />
+                  <div className="space-y-2 mb-6">
+                    <label htmlFor="admin_password" className="text-sm font-medium text-stone-700">Пароль</label>
+                    <input 
+                      id="admin_password"
+                      name="password"
+                      type="password"
+                      placeholder="Введіть пароль..."
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-6 py-4 bg-stone-50 border border-stone-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-stone-900/5"
+                    />
+                  </div>
                   <button 
                     type="submit"
                     className="w-full bg-stone-900 text-white py-4 rounded-2xl font-bold hover:bg-stone-800 transition-all"
@@ -509,6 +514,7 @@ export default function App() {
             </div>
             <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <label htmlFor="search_query" className="sr-only">Пошук</label>
               <input 
                 id="search_query"
                 name="search"
@@ -1124,7 +1130,7 @@ export default function App() {
               <h3 className="text-2xl font-bold mb-6">Залишити відгук</h3>
               <form onSubmit={handleAddReview} className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-stone-600 mb-1 block">Ваше ім'я</label>
+                  <label htmlFor="review_user_name" className="text-sm font-medium text-stone-600 mb-1 block">Ваше ім'я</label>
                   <input 
                     required
                     id="review_user_name"
@@ -1152,7 +1158,7 @@ export default function App() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-stone-600 mb-1 block">Ваш коментар</label>
+                  <label htmlFor="review_comment" className="text-sm font-medium text-stone-600 mb-1 block">Ваш коментар</label>
                   <textarea 
                     required
                     id="review_comment"
