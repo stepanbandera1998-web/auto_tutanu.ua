@@ -45,6 +45,9 @@ export default function App() {
   const [ads, setAds] = useState<Ad[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productsPage, setProductsPage] = useState(0);
+  const [hasMoreProducts, setHasMoreProducts] = useState(true);
+  const PRODUCTS_PER_PAGE = 24;
   const [isLoadingAds, setIsLoadingAds] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
@@ -136,22 +139,24 @@ export default function App() {
     
     init();
     
-    // Логування візиту на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
-    const logVisit = async () => {
-      const isStaticHost = window.location.hostname.includes('vercel.app');
-      if (isStaticHost) return;
+      // Логування візиту на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
+      const logVisit = async () => {
+        const isStaticHost = window.location.hostname.includes('vercel.app');
+        if (isStaticHost) return;
 
-      try {
-        const hasVisited = sessionStorage.getItem('visited');
-        if (!hasVisited) {
-          await fetch('/api/visit', { method: 'POST' });
-          sessionStorage.setItem('visited', 'true');
+        try {
+          const hasVisited = sessionStorage.getItem('visited');
+          if (!hasVisited) {
+            const res = await fetch('/api/visit', { method: 'POST' });
+            if (res.ok) {
+              sessionStorage.setItem('visited', 'true');
+            }
+          }
+        } catch (err) {
+          // Silent fail for stats to avoid console clutter
         }
-      } catch (err) {
-        console.warn('Не вдалося залогувати візит на сервер:', err);
-      }
-    };
-    logVisit();
+      };
+      logVisit();
 
     const logClick = async (type: string) => {
       if (supabase && supabaseStatus === 'connected') {
@@ -193,20 +198,30 @@ export default function App() {
     };
   }, []);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (page = 0) => {
     try {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
+      
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
       
       if (error) throw error;
-      setProducts(data || []);
+      
+      if (page === 0) {
+        setProducts(data || []);
+      } else {
+        setProducts(prev => [...prev, ...(data || [])]);
+      }
+      
+      setProductsPage(page);
+      setHasMoreProducts((data || []).length === PRODUCTS_PER_PAGE);
     } catch (error) {
       console.error('Error fetching products:', error);
-      setProducts([]);
+      if (page === 0) setProducts([]);
     } finally {
       setIsLoadingProducts(false);
     }
@@ -218,7 +233,8 @@ export default function App() {
       const { data, error } = await supabase
         .from('reviews')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
       
       if (error) throw error;
       setReviews(data || []);
@@ -235,7 +251,8 @@ export default function App() {
       const { data, error } = await supabase
         .from('ads')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
       
       if (error) throw error;
       
@@ -627,7 +644,7 @@ export default function App() {
               ))}
               <div className="sm:ml-auto">
                 <button 
-                  onClick={fetchProducts}
+                  onClick={() => fetchProducts(0)}
                   disabled={isLoadingProducts}
                   className={`w-12 h-12 rounded-full flex items-center justify-center hover:bg-stone-100 transition-all ${isLoadingProducts ? 'animate-spin opacity-50' : 'text-stone-400 hover:text-stone-900'}`}
                   title="Оновити каталог"
@@ -662,7 +679,11 @@ export default function App() {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ productId: product.id })
-                        }).catch(err => console.warn('Помилка логування перегляду на сервер:', err));
+                        }).then(res => {
+                          if (!res.ok) console.warn('Сервер повернув помилку при логуванні перегляду');
+                        }).catch(err => {
+                          // Silent fail
+                        });
                       }
 
                       // Оновлення переглядів у Supabase
@@ -727,6 +748,18 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {hasMoreProducts && filteredProducts.length > 0 && searchQuery === '' && selectedRadius === null && (
+              <div className="mt-12 text-center">
+                <button 
+                  onClick={() => fetchProducts(productsPage + 1)}
+                  disabled={isLoadingProducts}
+                  className="bg-stone-900 text-white px-8 py-4 rounded-full font-bold hover:bg-stone-800 transition-all disabled:opacity-50"
+                >
+                  {isLoadingProducts ? 'Завантаження...' : 'Завантажити ще товари'}
+                </button>
+              </div>
+            )}
           </main>
         </>
       )}

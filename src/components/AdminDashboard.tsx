@@ -89,15 +89,18 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [productsPage, setProductsPage] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
-  const PRODUCTS_PER_PAGE = 50;
+  const PRODUCTS_PER_PAGE = 20;
 
   useEffect(() => {
-    fetchProducts();
-    fetchAds();
-    fetchReviews();
-    fetchStats();
-    fetchSettings();
-    checkDatabaseHealth();
+    const loadInitialData = async () => {
+      await fetchSettings();
+      await checkDatabaseHealth();
+      await fetchProducts(0);
+      await fetchAds();
+      await fetchReviews();
+      await fetchStats();
+    };
+    loadInitialData();
     
     // Опитування загальної статистики
     const interval = setInterval(fetchStats, 30000); // Збільшуємо інтервал до 30с
@@ -189,7 +192,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       const { data, error } = await supabase
         .from('reviews')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100);
       
       if (error) throw error;
       setReviews(data || []);
@@ -241,7 +245,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       const { data, error } = await supabase
         .from('ads')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100);
       
       if (error) throw error;
       setAds(data || []);
@@ -277,25 +282,39 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             }));
           }
 
-          // 2. Отримуємо суму переглядів
+          // 2. Отримуємо суму переглядів - ОПТИМІЗАЦІЯ: обмежуємо вибірку
+          // Отримуємо суму для топ-500 товарів (замість 1000) для зменшення навантаження
           const { data: viewsSumData, error: sumError } = await supabase
             .from('products')
-            .select('views');
+            .select('views')
+            .order('views', { ascending: false })
+            .limit(500);
           
           if (!sumError && viewsSumData) {
             totalViews = viewsSumData.reduce((acc, p) => acc + (p.views || 0), 0);
           }
 
-          // 3. Отримуємо статистику одним запитом
+          // 3. Отримуємо кількість візитів - ОПТИМІЗАЦІЯ: використовуємо count: 'exact'
+          const { count: vCount, error: vError } = await supabase
+            .from('stats')
+            .select('*', { count: 'exact', head: true })
+            .eq('type', 'visit');
+          
+          if (!vError && vCount !== null) {
+            visitsCount = vCount;
+          }
+
+          // 4. Отримуємо кліки - ОПТИМІЗАЦІЯ: обмежуємо останніми 500 записами (замість 2000)
           const { data: statsData, error: statsError } = await supabase
             .from('stats')
-            .select('type');
+            .select('type')
+            .neq('type', 'visit')
+            .order('timestamp', { ascending: false })
+            .limit(500);
           
           if (!statsError && statsData) {
             statsData.forEach(row => {
-              if (row.type === 'visit') {
-                visitsCount++;
-              } else if (row.type.startsWith('click_')) {
+              if (row.type.startsWith('click_')) {
                 const type = row.type.replace('click_', '');
                 clicks[type] = (clicks[type] || 0) + 1;
               }

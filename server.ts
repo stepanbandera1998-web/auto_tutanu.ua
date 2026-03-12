@@ -6,26 +6,37 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-const db = new Database("shop.db");
+let db: Database.Database;
+try {
+  db = new Database("shop.db");
+  console.log("Database initialized successfully");
+} catch (err) {
+  console.error("Failed to initialize database, using in-memory fallback:", err);
+  db = new Database(":memory:");
+}
 
 // Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS stats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL, -- 'visit', 'view'
-    product_id INTEGER,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE INDEX IF NOT EXISTS idx_stats_type ON stats(type);
-  CREATE INDEX IF NOT EXISTS idx_stats_product_id ON stats(product_id);
-`);
-
-// Migration: Add product_id if it doesn't exist (for existing databases)
 try {
-  db.prepare("SELECT product_id FROM stats LIMIT 1").get();
-} catch (e) {
-  console.log("Adding product_id column to stats table...");
-  db.exec("ALTER TABLE stats ADD COLUMN product_id INTEGER");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL, -- 'visit', 'view'
+      product_id INTEGER,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_stats_type ON stats(type);
+    CREATE INDEX IF NOT EXISTS idx_stats_product_id ON stats(product_id);
+  `);
+
+  // Migration: Add product_id if it doesn't exist (for existing databases)
+  try {
+    db.prepare("SELECT product_id FROM stats LIMIT 1").get();
+  } catch (e) {
+    console.log("Adding product_id column to stats table...");
+    db.exec("ALTER TABLE stats ADD COLUMN product_id INTEGER");
+  }
+} catch (err) {
+  console.error("Error setting up database schema:", err);
 }
 
 async function startServer() {
