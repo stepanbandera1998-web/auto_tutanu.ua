@@ -309,7 +309,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             .from('stats')
             .select('type')
             .neq('type', 'visit')
-            .order('timestamp', { ascending: false })
+            .order('created_at', { ascending: false })
             .limit(500);
           
           if (!statsError && statsData) {
