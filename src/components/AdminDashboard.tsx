@@ -305,11 +305,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           }
 
           // 4. Отримуємо кліки - ОПТИМІЗАЦІЯ: обмежуємо останніми 500 записами (замість 2000)
+          // Використовуємо 'id' для сортування, оскільки це найбільш надійна колонка для порядку
           const { data: statsData, error: statsError } = await supabase
             .from('stats')
             .select('type')
             .neq('type', 'visit')
-            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
             .limit(500);
           
           if (!statsError && statsData) {
@@ -1530,8 +1531,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
                 <h3 className="text-xl font-bold mb-8">Популярність товарів</h3>
-                <div className="h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-[300px] w-full" style={{ minHeight: '300px' }}>
+                  <ResponsiveContainer width="100%" height="100%" minHeight={300}>
                     <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
                       <XAxis 
