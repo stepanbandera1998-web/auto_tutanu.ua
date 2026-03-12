@@ -713,6 +713,7 @@ export default function App() {
                         alt={product.name || 'Товар'}
                         referrerPolicy="no-referrer"
                         loading="lazy"
+                        draggable="false"
                       />
                       {product.is_sale && (
                         <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
@@ -816,7 +817,7 @@ export default function App() {
       {activeTab === 'ads' && (
         <main className="max-w-7xl mx-auto px-4 py-20">
           {siteSettings?.banner_url && (
-            <div className="mb-20 rounded-[3rem] overflow-hidden shadow-2xl">
+            <div className="mb-20 overflow-hidden shadow-2xl">
               <img 
                 src={siteSettings.banner_url} 
                 className="w-full h-auto object-cover max-h-[400px]" 
@@ -883,6 +884,7 @@ export default function App() {
                       alt="" 
                       referrerPolicy="no-referrer"
                       loading="lazy"
+                      draggable="false"
                     />
                     {ad.is_placeholder && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -943,6 +945,7 @@ export default function App() {
                   className="w-full h-full object-contain p-2 md:p-6"
                   alt=""
                   referrerPolicy="no-referrer"
+                  draggable="false"
                 />
                 {selectedAd && Array.isArray(selectedAd.images) && selectedAd.images.length > 1 && (
                   <>
@@ -1212,6 +1215,7 @@ export default function App() {
                   className="w-full h-full object-contain p-2 sm:p-4"
                   alt={selectedProduct?.name || ''}
                   referrerPolicy="no-referrer"
+                  draggable="false"
                 />
                 {selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 1 && (
                   <>
