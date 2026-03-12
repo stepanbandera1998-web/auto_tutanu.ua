@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Instagram, 
   Phone, 
@@ -67,6 +67,7 @@ export default function App() {
   const [selectedRadius, setSelectedRadius] = useState<string | null>(null);
 
   const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured'>('checking');
+  const isFirstMount = useRef(true);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -74,6 +75,11 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    
     if (!isAdmin) {
       fetchProducts();
       fetchAds();
@@ -122,9 +128,12 @@ export default function App() {
       }, 15000); // 15 секунд таймаут
 
       try {
+        // Спочатку перевіряємо з'єднання
+        await checkConnection();
+        
+        // Потім завантажуємо дані
         await Promise.all([
-          checkConnection(),
-          fetchProducts(),
+          fetchProducts(0),
           fetchReviews(),
           fetchAds(),
           fetchSettings()
@@ -198,7 +207,7 @@ export default function App() {
     };
   }, []);
 
-  const fetchProducts = async (page = 0) => {
+  const fetchProducts = async (page = 0, isRetry = false) => {
     try {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
@@ -210,6 +219,13 @@ export default function App() {
         .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
       
       if (error) throw error;
+      
+      // Якщо на першій сторінці порожньо, спробуємо ще раз через секунду (може бути проблема з'єднання на мобільних)
+      if (page === 0 && (!data || data.length === 0) && !isRetry) {
+        console.log('Товарів не знайдено при першому запиті, спроба повтору...');
+        setTimeout(() => fetchProducts(0, true), 1000);
+        return;
+      }
       
       if (page === 0) {
         setProducts(data || []);
