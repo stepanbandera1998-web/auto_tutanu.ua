@@ -87,6 +87,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
 
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productsPage, setProductsPage] = useState(0);
+  const [hasMoreProducts, setHasMoreProducts] = useState(true);
+  const PRODUCTS_PER_PAGE = 50;
 
   useEffect(() => {
     fetchProducts();
@@ -196,15 +199,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (page = 0) => {
     try {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
-      console.log('Fetching products from Supabase...');
+      console.log(`Fetching products from Supabase (page ${page})...`);
+      
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
       
       if (error) {
         console.error('Supabase error fetching products:', error);
@@ -212,11 +217,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       }
       
       console.log(`Fetched ${data?.length || 0} products from Supabase`);
-      setProducts(data || []);
+      
+      if (page === 0) {
+        setProducts(data || []);
+      } else {
+        setProducts(prev => [...prev, ...(data || [])]);
+      }
+      
+      setProductsPage(page);
+      setHasMoreProducts((data || []).length === PRODUCTS_PER_PAGE);
     } catch (error: any) {
       console.error('Error fetching products:', error);
       showNotification('Помилка завантаження товарів: ' + (error.message || 'Невідома помилка'), 'error');
-      setProducts([]);
+      if (page === 0) setProducts([]);
     } finally {
       setIsLoadingProducts(false);
     }
@@ -919,6 +932,14 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     });
   };
 
+  const filteredAdminProducts = products.filter(p => {
+    const search = adminSearchQuery.toLowerCase();
+    return !search || 
+      (p.name || '').toLowerCase().includes(search) ||
+      (p.description || '').toLowerCase().includes(search) ||
+      (p.sku || '').toLowerCase().includes(search);
+  });
+
   return (
     <div className="min-h-screen bg-stone-50 p-4 md:p-8">
       <AnimatePresence>
@@ -1066,7 +1087,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 <div className="flex items-center gap-4">
                   <h2 className="text-xl font-semibold">Товари</h2>
                   <button 
-                    onClick={fetchProducts}
+                    onClick={() => fetchProducts(0)}
                     disabled={isLoadingProducts}
                     className={`p-2 rounded-lg hover:bg-stone-100 transition-colors ${isLoadingProducts ? 'animate-spin text-stone-300' : 'text-stone-500'}`}
                     title="Оновити список"
@@ -1229,7 +1250,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                 </button>
                               ) : (
                                 <button 
-                                  onClick={fetchProducts}
+                                  onClick={() => fetchProducts(0)}
                                   className="mt-4 text-stone-900 font-medium hover:underline"
                                 >
                                   Оновити список
@@ -1240,6 +1261,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         )}
                       </tbody>
                     </table>
+                    {hasMoreProducts && products.length > 0 && (
+                      <div className="p-4 border-t border-stone-100 text-center">
+                        <button 
+                          onClick={() => fetchProducts(productsPage + 1)}
+                          disabled={isLoadingProducts}
+                          className="text-stone-600 font-medium hover:text-stone-900 transition-colors disabled:opacity-50"
+                        >
+                          {isLoadingProducts ? 'Завантаження...' : 'Завантажити ще'}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

@@ -329,11 +329,14 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 's123321s') { // Simple password for demo
+    if (password === 's123321s') {
       setIsAdmin(true);
       setShowAdminLogin(false);
+      setPassword('');
+      showNotification('Вхід успішний', 'success');
     } else {
-      showNotification('Невірний пароль', 'error');
+      showNotification('Невірний пароль. Спробуйте ще раз.', 'error');
+      setPassword('');
     }
   };
 
