@@ -47,6 +47,8 @@ export default function App() {
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productFetchError, setProductFetchError] = useState<string | null>(null);
   const [productsPage, setProductsPage] = useState(0);
+  const [totalProductsCount, setTotalProductsCount] = useState(0);
+  const [filteredCount, setFilteredCount] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
   const PRODUCTS_PER_PAGE = 24;
   const [isLoadingAds, setIsLoadingAds] = useState(true);
@@ -236,7 +238,7 @@ export default function App() {
       
       let query = supabase
         .from('products')
-        .select('id, name, description, price, images, sku, is_sale, old_price, views, radius, created_at');
+        .select('id, name, description, price, images, sku, is_sale, old_price, views, radius, created_at', { count: 'exact' });
 
       if (selectedRadius) {
         query = query.eq('radius', selectedRadius);
@@ -246,7 +248,7 @@ export default function App() {
         query = query.or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,sku.ilike.%${searchQuery}%`);
       }
       
-      const { data, error } = await query
+      const { data, error, count } = await query
         .order('created_at', { ascending: false })
         .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
       
@@ -269,6 +271,11 @@ export default function App() {
       
       if (page === 0) {
         setProducts(data || []);
+        setFilteredCount(count || 0);
+        // Якщо немає фільтрів, це загальна кількість товарів
+        if (!selectedRadius && !searchQuery) {
+          setTotalProductsCount(count || 0);
+        }
       } else {
         setProducts(prev => [...prev, ...(data || [])]);
       }
@@ -667,7 +674,11 @@ export default function App() {
                 <p className="text-stone-500">Виберіть найкраще для вашого автомобіля</p>
               </div>
               <div className="text-sm font-medium text-stone-400">
-                Знайдено {filteredProducts.length} товарів
+                {selectedRadius || searchQuery ? (
+                  <>Знайдено {filteredCount} товарів</>
+                ) : (
+                  <>Всього на сайті: {totalProductsCount} товарів</>
+                )}
               </div>
             </div>
 
