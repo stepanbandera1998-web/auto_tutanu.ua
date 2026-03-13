@@ -45,6 +45,7 @@ export default function App() {
   const [ads, setAds] = useState<Ad[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings | null>(null);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productFetchError, setProductFetchError] = useState<string | null>(null);
   const [productsPage, setProductsPage] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
   const PRODUCTS_PER_PAGE = 24;
@@ -226,6 +227,7 @@ export default function App() {
     try {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
+      setProductFetchError(null);
       
       // Очищаємо список товарів при новому пошуку або фільтрації, щоб показати стан завантаження
       if (page === 0 && !isRetry) {
@@ -234,7 +236,7 @@ export default function App() {
       
       let query = supabase
         .from('products')
-        .select('*');
+        .select('id, name, description, price, images, sku, is_sale, old_price, views, radius, created_at');
 
       if (selectedRadius) {
         query = query.eq('radius', selectedRadius);
@@ -248,7 +250,15 @@ export default function App() {
         .order('created_at', { ascending: false })
         .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
       
-      if (error) throw error;
+      if (error) {
+        // Якщо це таймаут (57014), спробуємо ще раз один раз
+        if (error.code === '57014' && !isRetry) {
+          console.warn('Отримано таймаут, спроба повтору...');
+          setTimeout(() => fetchProducts(page, true), 1500);
+          return;
+        }
+        throw error;
+      }
       
       // Якщо на першій сторінці порожньо, спробуємо ще раз через секунду (може бути проблема з'єднання на мобільних)
       if (page === 0 && (!data || data.length === 0) && !isRetry) {
@@ -265,8 +275,10 @@ export default function App() {
       
       setProductsPage(page);
       setHasMoreProducts((data || []).length === PRODUCTS_PER_PAGE);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching products:', error);
+      const errorMessage = error.message || 'Помилка завантаження товарів';
+      setProductFetchError(errorMessage);
       if (page === 0) setProducts([]);
     } finally {
       setIsLoadingProducts(false);
@@ -712,6 +724,25 @@ export default function App() {
                     </div>
                   ))}
                 </>
+              ) : productFetchError ? (
+                <div className="col-span-full py-20 text-center">
+                  <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <RefreshCw size={32} />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">Упс! Виникла помилка</h3>
+                  <p className="text-stone-500 mb-8 max-w-md mx-auto">
+                    {productFetchError.includes('timeout') 
+                      ? 'Сервер не встиг відповісти вчасно. Це може бути через велику кількість товарів або повільний інтернет.' 
+                      : 'Не вдалося завантажити товари. Будь ласка, спробуйте ще раз.'}
+                  </p>
+                  <button 
+                    onClick={() => fetchProducts(0)}
+                    className="bg-stone-900 text-white px-8 py-3 rounded-full font-bold hover:bg-stone-800 transition-all flex items-center gap-2 mx-auto"
+                  >
+                    <RefreshCw size={18} />
+                    Спробувати знову
+                  </button>
+                </div>
               ) : filteredProducts.length > 0 ? (
                 filteredProducts.map((product) => (
                   <motion.div 
