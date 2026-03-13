@@ -227,6 +227,11 @@ export default function App() {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
       
+      // Очищаємо список товарів при новому пошуку або фільтрації, щоб показати стан завантаження
+      if (page === 0 && !isRetry) {
+        setProducts([]);
+      }
+      
       let query = supabase
         .from('products')
         .select('*');
@@ -691,15 +696,22 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 relative">
               {isLoadingProducts && products.length === 0 ? (
-                [...Array(8)].map((_, i) => (
-                  <div key={i} className="animate-pulse">
-                    <div className="aspect-square bg-stone-200 rounded-3xl mb-4" />
-                    <div className="h-4 bg-stone-200 rounded w-3/4 mb-2" />
-                    <div className="h-4 bg-stone-200 rounded w-1/2" />
+                <>
+                  <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
+                    <RefreshCw className="animate-spin text-stone-300 mb-4" size={48} />
+                    <h3 className="text-xl font-bold text-stone-800 mb-2">Очікуйте, формується каталог товарів...</h3>
+                    <p className="text-stone-500">Ми підбираємо найкращі пропозиції для вас</p>
                   </div>
-                ))
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="animate-pulse">
+                      <div className="aspect-square bg-stone-100 rounded-3xl mb-4" />
+                      <div className="h-4 bg-stone-100 rounded w-3/4 mb-2" />
+                      <div className="h-4 bg-stone-100 rounded w-1/2" />
+                    </div>
+                  ))}
+                </>
               ) : filteredProducts.length > 0 ? (
                 filteredProducts.map((product) => (
                   <motion.div 
