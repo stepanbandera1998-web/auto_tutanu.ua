@@ -81,12 +81,27 @@ export default function App() {
     }
     
     if (!isAdmin) {
-      fetchProducts();
+      fetchProducts(0);
       fetchAds();
       fetchReviews();
       fetchSettings();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isInitialLoading && !isAdmin) {
+      fetchProducts(0);
+    }
+  }, [selectedRadius]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!isInitialLoading && !isAdmin) {
+        fetchProducts(0);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -212,9 +227,19 @@ export default function App() {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
       
-      const { data, error } = await supabase
+      let query = supabase
         .from('products')
-        .select('*')
+        .select('*');
+
+      if (selectedRadius) {
+        query = query.eq('radius', selectedRadius);
+      }
+
+      if (searchQuery) {
+        query = query.or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,sku.ilike.%${searchQuery}%`);
+      }
+      
+      const { data, error } = await query
         .order('created_at', { ascending: false })
         .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
       
@@ -373,17 +398,7 @@ export default function App() {
     }
   };
 
-  const filteredProducts = products.filter(p => {
-    const search = searchQuery.toLowerCase();
-    const matchesSearch = !search || 
-      (p.name || '').toLowerCase().includes(search) ||
-      (p.description || '').toLowerCase().includes(search) ||
-      (p.sku || '').toLowerCase().includes(search);
-    
-    const matchesRadius = !selectedRadius || p.radius === selectedRadius;
-    
-    return matchesSearch && matchesRadius;
-  });
+  const filteredProducts = products;
 
   if (isAdmin) {
     return <AdminDashboard onLogout={() => setIsAdmin(false)} />;
@@ -772,7 +787,7 @@ export default function App() {
               )}
             </div>
 
-            {hasMoreProducts && filteredProducts.length > 0 && searchQuery === '' && selectedRadius === null && (
+            {hasMoreProducts && products.length > 0 && (
               <div className="mt-12 text-center">
                 <button 
                   onClick={() => fetchProducts(productsPage + 1)}
