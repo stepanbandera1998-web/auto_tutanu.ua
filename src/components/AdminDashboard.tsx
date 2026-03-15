@@ -85,6 +85,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   } | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [isChartVisible, setIsChartVisible] = useState(false);
 
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [productsPage, setProductsPage] = useState(0);
@@ -109,6 +110,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeView === 'stats') {
+      const timer = setTimeout(() => setIsChartVisible(true), 150);
+      return () => clearTimeout(timer);
+    } else {
+      setIsChartVisible(false);
+    }
+  }, [activeView]);
 
   const checkDatabaseHealth = async () => {
     if (!supabase) return;
@@ -1708,44 +1718,46 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
                 <h3 className="text-xl font-bold mb-8">Популярність товарів</h3>
                 <div className="h-[300px] w-full" style={{ minHeight: '300px' }}>
-                  <ResponsiveContainer width="100%" height="100%" minHeight={300}>
-                    <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
-                      <XAxis 
-                        dataKey="name" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fontSize: 12, fill: '#888' }}
-                        hide
-                      />
-                      <YAxis 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fontSize: 12, fill: '#888' }}
-                      />
-                      <Tooltip 
-                        cursor={{ fill: '#f9f9f9' }}
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload;
-                            return (
-                              <div className="bg-white p-3 rounded-xl shadow-xl border border-stone-100">
-                                <p className="font-bold text-stone-900">{data.name}</p>
-                                <p className="text-xs text-stone-500 font-mono mb-1">Код: {data.sku}</p>
-                                <p className="text-sm text-purple-600 font-semibold">{data.views} переглядів</p>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <Bar dataKey="views" radius={[4, 4, 4, 4]} barSize={32}>
-                        {(stats?.mostViewed || []).map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={index === 0 ? '#1c1917' : '#d6d3d1'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {isChartVisible && stats?.mostViewed && stats.mostViewed.length > 0 && (
+                    <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                      <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
+                        <XAxis 
+                          dataKey="name" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fontSize: 12, fill: '#888' }}
+                          hide
+                        />
+                        <YAxis 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fontSize: 12, fill: '#888' }}
+                        />
+                        <Tooltip 
+                          cursor={{ fill: '#f9f9f9' }}
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white p-3 rounded-xl shadow-xl border border-stone-100">
+                                  <p className="font-bold text-stone-900">{data.name}</p>
+                                  <p className="text-xs text-stone-500 font-mono mb-1">Код: {data.sku}</p>
+                                  <p className="text-sm text-purple-600 font-semibold">{data.views} переглядів</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Bar dataKey="views" radius={[4, 4, 4, 4]} barSize={32}>
+                          {(stats?.mostViewed || []).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={index === 0 ? '#1c1917' : '#d6d3d1'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
                 <div className="mt-6 space-y-3">
                   {stats?.mostViewed?.slice(0, 3).map((item, idx) => (
