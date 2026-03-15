@@ -840,6 +840,18 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     });
   };
 
+  const dataURLtoBlob = (dataurl: string) => {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'product' | 'ad') => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -849,16 +861,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     setUploadProgress({ current: 0, total: fileList.length });
 
     try {
+      if (!supabase) throw new Error('Supabase not configured');
+
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
         setUploadProgress({ current: i + 1, total: fileList.length });
 
-        // Limit to 15MB per image for initial reading on mobile, then we compress
-        if (file.size > 15 * 1024 * 1024) {
-          showNotification(`Файл ${file.name} занадто великий (>15MB)`, 'error');
-          continue;
-        }
-
+        // Читаємо файл як Base64 для стиснення
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
@@ -866,24 +875,43 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           reader.readAsDataURL(file);
         });
 
-        const compressedBase64 = await compressImage(base64, 800, 800, 0.5);
+        // Стискаємо зображення
+        const compressedBase64 = await compressImage(base64, 1000, 1000, 0.7);
+        const blob = dataURLtoBlob(compressedBase64);
+
+        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
+        const filePath = `${type}s/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('product-images')
+          .upload(filePath, blob, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: 'image/jpeg'
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('product-images')
+          .getPublicUrl(filePath);
         
         if (type === 'product') {
           setFormData(prev => {
             if (prev.images.length >= 10) return prev;
-            return { ...prev, images: [...prev.images, compressedBase64] };
+            return { ...prev, images: [...prev.images, publicUrl] };
           });
         } else if (type === 'ad') {
           setAdFormData(prev => {
             if (prev.images.length >= 10) return prev;
-            return { ...prev, images: [...prev.images, compressedBase64] };
+            return { ...prev, images: [...prev.images, publicUrl] };
           });
         }
       }
-      showNotification(`Завантажено ${fileList.length} фото`, 'success');
-    } catch (err) {
+      showNotification(`Завантажено та стиснуто ${fileList.length} фото`, 'success');
+    } catch (err: any) {
       console.error('Upload error:', err);
-      showNotification('Помилка при завантаженні фото', 'error');
+      showNotification('Помилка при завантаженні фото: ' + (err.message || 'Невідома помилка'), 'error');
     } finally {
       setIsUploading(false);
       if (e.target) e.target.value = '';
@@ -1742,14 +1770,39 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         accept="image/*"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = async () => {
-                              const base64 = reader.result as string;
-                              const compressed = await compressImage(base64, 1200, 400);
-                              handleSaveSettings({ banner_url: compressed });
-                            };
-                            reader.readAsDataURL(file);
+                          if (file && supabase) {
+                            try {
+                              setIsSubmitting(true);
+                              
+                              // Читаємо та стискаємо
+                              const base64 = await new Promise<string>((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(file);
+                              });
+                              
+                              const compressed = await compressImage(base64, 1200, 400, 0.8);
+                              const blob = dataURLtoBlob(compressed);
+
+                              const fileName = `banner-${Date.now()}.jpg`;
+                              const filePath = `settings/${fileName}`;
+
+                              const { error: uploadError } = await supabase.storage
+                                .from('product-images')
+                                .upload(filePath, blob, { contentType: 'image/jpeg' });
+
+                              if (uploadError) throw uploadError;
+
+                              const { data: { publicUrl } } = supabase.storage
+                                .from('product-images')
+                                .getPublicUrl(filePath);
+
+                              handleSaveSettings({ banner_url: publicUrl });
+                            } catch (err: any) {
+                              showNotification('Помилка завантаження банера: ' + err.message, 'error');
+                            } finally {
+                              setIsSubmitting(false);
+                            }
                           }
                         }}
                         className="hidden"
@@ -2016,14 +2069,38 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                         accept="image/*"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = async () => {
-                              const base64 = reader.result as string;
-                              const compressed = await compressImage(base64, 1920, 1080);
-                              handleSaveSettings({ catalog_header_image: compressed });
-                            };
-                            reader.readAsDataURL(file);
+                          if (file && supabase) {
+                            try {
+                              setIsSubmitting(true);
+                              
+                              const base64 = await new Promise<string>((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(file);
+                              });
+                              
+                              const compressed = await compressImage(base64, 1920, 1080, 0.8);
+                              const blob = dataURLtoBlob(compressed);
+
+                              const fileName = `catalog-header-${Date.now()}.jpg`;
+                              const filePath = `settings/${fileName}`;
+
+                              const { error: uploadError } = await supabase.storage
+                                .from('product-images')
+                                .upload(filePath, blob, { contentType: 'image/jpeg' });
+
+                              if (uploadError) throw uploadError;
+
+                              const { data: { publicUrl } } = supabase.storage
+                                .from('product-images')
+                                .getPublicUrl(filePath);
+
+                              handleSaveSettings({ catalog_header_image: publicUrl });
+                            } catch (err: any) {
+                              showNotification('Помилка завантаження фону: ' + err.message, 'error');
+                            } finally {
+                              setIsSubmitting(false);
+                            }
                           }
                         }}
                       />
@@ -2053,14 +2130,38 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                         accept="image/*"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = async () => {
-                              const base64 = reader.result as string;
-                              const compressed = await compressImage(base64, 1920, 1080);
-                              handleSaveSettings({ ads_header_image: compressed });
-                            };
-                            reader.readAsDataURL(file);
+                          if (file && supabase) {
+                            try {
+                              setIsSubmitting(true);
+                              
+                              const base64 = await new Promise<string>((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result as string);
+                                reader.readAsDataURL(file);
+                              });
+                              
+                              const compressed = await compressImage(base64, 1920, 1080, 0.8);
+                              const blob = dataURLtoBlob(compressed);
+
+                              const fileName = `ads-header-${Date.now()}.jpg`;
+                              const filePath = `settings/${fileName}`;
+
+                              const { error: uploadError } = await supabase.storage
+                                .from('product-images')
+                                .upload(filePath, blob, { contentType: 'image/jpeg' });
+
+                              if (uploadError) throw uploadError;
+
+                              const { data: { publicUrl } } = supabase.storage
+                                .from('product-images')
+                                .getPublicUrl(filePath);
+
+                              handleSaveSettings({ ads_header_image: publicUrl });
+                            } catch (err: any) {
+                              showNotification('Помилка завантаження фону: ' + err.message, 'error');
+                            } finally {
+                              setIsSubmitting(false);
+                            }
                           }
                         }}
                       />
