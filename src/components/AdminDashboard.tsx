@@ -147,6 +147,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const fetchSettings = async () => {
     try {
       if (!supabase) return;
+      
+      // Спробуємо отримати всі колонки
       const { data, error } = await supabase
         .from('site_settings')
         .select('*')
@@ -154,14 +156,27 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       
       if (!error && data) {
         setSiteSettings(data);
-      } else if (error && error.code === 'PGRST116') {
-        // Налаштування не знайдено, створюємо за замовчуванням
-        const { data: newData, error: createError } = await supabase
-          .from('site_settings')
-          .insert([{ id: '00000000-0000-0000-0000-000000000000' }])
-          .select()
-          .single();
-        if (!createError) setSiteSettings(newData);
+      } else if (error) {
+        // Якщо помилка пов'язана з відсутністю колонки maintenance_mode
+        if (error.message?.includes('maintenance_mode')) {
+          console.warn('Колонка maintenance_mode відсутня, завантажуємо базові налаштування');
+          const { data: baseData, error: baseError } = await supabase
+            .from('site_settings')
+            .select('id, banner_url, catalog_header_image, ads_header_image, updated_at')
+            .single();
+          
+          if (!baseError && baseData) {
+            setSiteSettings({ ...baseData, maintenance_mode: false });
+          }
+        } else if (error.code === 'PGRST116') {
+          // Налаштування не знайдено, створюємо за замовчуванням
+          const { data: newData, error: createError } = await supabase
+            .from('site_settings')
+            .insert([{ id: '00000000-0000-0000-0000-000000000000' }])
+            .select()
+            .single();
+          if (!createError) setSiteSettings(newData);
+        }
       }
     } catch (error) {
       console.error('Помилка отримання налаштувань:', error);
@@ -1999,7 +2014,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         ads: ['id', 'title', 'description', 'price', 'phone', 'images', 'is_placeholder', 'product_id'],
                         reviews: ['id', 'user_name', 'rating', 'comment', 'created_at'],
                         stats: ['id', 'type', 'created_at'],
-                        site_settings: ['id', 'banner_url', 'catalog_header_image', 'ads_header_image']
+                        site_settings: ['id', 'banner_url', 'catalog_header_image', 'ads_header_image', 'maintenance_mode']
                       };
 
                       const missingColumns = requiredColumns[table]?.filter(col => !status.columns.includes(col)) || [];

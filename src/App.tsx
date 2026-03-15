@@ -377,6 +377,15 @@ export default function App() {
       
       if (!error && data) {
         setSiteSettings(data);
+      } else if (error && error.message?.includes('maintenance_mode')) {
+        // Fallback if maintenance_mode column is missing
+        const { data: baseData, error: baseError } = await supabase
+          .from('site_settings')
+          .select('id, banner_url, catalog_header_image, ads_header_image, updated_at')
+          .single();
+        if (!baseError && baseData) {
+          setSiteSettings({ ...baseData, maintenance_mode: false });
+        }
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
