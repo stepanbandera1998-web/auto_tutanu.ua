@@ -730,20 +730,56 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [optimizationProgress, setOptimizationProgress] = useState(0);
 
   const optimizeDatabase = async () => {
-    showConfirm('Це стисне всі існуючі зображення в базі даних для пришвидшення завантаження. Це може зайняти деякий час. Продовжити?', async () => {
+    showConfirm('Це стисне всі існуючі зображення (Base64) в базі даних та перенесе їх у хмарне сховище Supabase для пришвидшення завантаження. Продовжити?', async () => {
       setIsOptimizing(true);
       setOptimizationProgress(0);
       try {
         if (!supabase) throw new Error('Supabase не налаштовано');
 
-        // Отримуємо загальну кількість для прогресу
+        // 1. Оптимізація налаштувань сайту
+        const { data: settings } = await supabase.from('site_settings').select('*').single();
+        if (settings) {
+          const updates: any = {};
+          const fieldsToOptimize = ['banner_url', 'catalog_header_image', 'ads_header_image'];
+          
+          for (const field of fieldsToOptimize) {
+            const val = settings[field];
+            if (val && typeof val === 'string' && val.startsWith('data:image')) {
+              try {
+                const compressed = await compressImage(val, 1200, 600, 0.7);
+                const blob = dataURLtoBlob(compressed);
+                const fileName = `optimized-settings-${field}-${Date.now()}.jpg`;
+                const filePath = `settings/${fileName}`;
+                
+                const { error: uploadError } = await supabase.storage
+                  .from('product-images')
+                  .upload(filePath, blob, { contentType: 'image/jpeg' });
+                
+                if (!uploadError) {
+                  const { data: { publicUrl } } = supabase.storage
+                    .from('product-images')
+                    .getPublicUrl(filePath);
+                  updates[field] = publicUrl;
+                }
+              } catch (e) {
+                console.error(`Failed to optimize setting ${field}:`, e);
+              }
+            }
+          }
+          
+          if (Object.keys(updates).length > 0) {
+            await supabase.from('site_settings').update(updates).eq('id', settings.id);
+          }
+        }
+
+        // 2. Отримуємо загальну кількість для прогресу
         const { count: productsCount } = await supabase.from('products').select('*', { count: 'exact', head: true });
         const { count: adsCount } = await supabase.from('ads').select('*', { count: 'exact', head: true });
         
         const totalItems = (productsCount || 0) + (adsCount || 0);
         let processedItems = 0;
 
-        // Оптимізація товарів частинами
+        // 3. Оптимізація товарів частинами
         const BATCH_SIZE = 10;
         
         if (productsCount && productsCount > 0) {
@@ -761,23 +797,26 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 const optimizedImages = await Promise.all(
                   product.images.map(async (img: string) => {
                     if (img && typeof img === 'string' && img.startsWith('data:image')) {
-                      // Стискаємо
-                      const compressed = await compressImage(img);
-                      const blob = dataURLtoBlob(compressed);
-                      
-                      // Завантажуємо в Storage замість збереження Base64
-                      const fileName = `optimized-${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
-                      const filePath = `products/${fileName}`;
-                      
-                      const { error: uploadError } = await supabase.storage
-                        .from('product-images')
-                        .upload(filePath, blob, { contentType: 'image/jpeg' });
-                      
-                      if (!uploadError) {
-                        const { data: { publicUrl } } = supabase.storage
+                      try {
+                        // Стискаємо (1000x1000 для товарів)
+                        const compressed = await compressImage(img, 1000, 1000, 0.7);
+                        const blob = dataURLtoBlob(compressed);
+                        
+                        const fileName = `optimized-prod-${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
+                        const filePath = `products/${fileName}`;
+                        
+                        const { error: uploadError } = await supabase.storage
                           .from('product-images')
-                          .getPublicUrl(filePath);
-                        return publicUrl;
+                          .upload(filePath, blob, { contentType: 'image/jpeg' });
+                        
+                        if (!uploadError) {
+                          const { data: { publicUrl } } = supabase.storage
+                            .from('product-images')
+                            .getPublicUrl(filePath);
+                          return publicUrl;
+                        }
+                      } catch (e) {
+                        console.error('Failed to optimize product image:', e);
                       }
                     }
                     return img;
@@ -795,7 +834,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           }
         }
 
-        // Оптимізація оголошень частинами
+        // 4. Оптимізація оголошень частинами
         if (adsCount && adsCount > 0) {
           for (let i = 0; i < adsCount; i += BATCH_SIZE) {
             const { data: adsBatch, error: aError } = await supabase
@@ -811,23 +850,26 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 const optimizedImages = await Promise.all(
                   ad.images.map(async (img: string) => {
                     if (img && typeof img === 'string' && img.startsWith('data:image')) {
-                      // Стискаємо
-                      const compressed = await compressImage(img);
-                      const blob = dataURLtoBlob(compressed);
-                      
-                      // Завантажуємо в Storage замість збереження Base64
-                      const fileName = `optimized-${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
-                      const filePath = `ads/${fileName}`;
-                      
-                      const { error: uploadError } = await supabase.storage
-                        .from('product-images')
-                        .upload(filePath, blob, { contentType: 'image/jpeg' });
-                      
-                      if (!uploadError) {
-                        const { data: { publicUrl } } = supabase.storage
+                      try {
+                        // Стискаємо
+                        const compressed = await compressImage(img, 1000, 1000, 0.7);
+                        const blob = dataURLtoBlob(compressed);
+                        
+                        const fileName = `optimized-ad-${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
+                        const filePath = `ads/${fileName}`;
+                        
+                        const { error: uploadError } = await supabase.storage
                           .from('product-images')
-                          .getPublicUrl(filePath);
-                        return publicUrl;
+                          .upload(filePath, blob, { contentType: 'image/jpeg' });
+                        
+                        if (!uploadError) {
+                          const { data: { publicUrl } } = supabase.storage
+                            .from('product-images')
+                            .getPublicUrl(filePath);
+                          return publicUrl;
+                        }
+                      } catch (e) {
+                        console.error('Failed to optimize ad image:', e);
                       }
                     }
                     return img;
@@ -845,9 +887,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           }
         }
 
-        showNotification('Базу даних оптимізовано!');
+        showNotification('Базу даних успішно оптимізовано! Всі зображення стиснуто та перенесено у сховище.', 'success');
         fetchProducts(0);
         fetchAds();
+        fetchSettings();
       } catch (error: any) {
         console.error('Помилка оптимізації:', error);
         showNotification('Помилка оптимізації: ' + error.message, 'error');
@@ -883,9 +926,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   };
 
   const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.5): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image();
       img.src = base64Str;
+      img.onerror = (err) => reject(err);
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let width = img.width;
