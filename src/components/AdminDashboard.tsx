@@ -577,6 +577,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     showConfirm('Ви впевнені?', async () => {
       try {
         if (!supabase) throw new Error('Supabase не налаштовано');
+        
+        // Отримуємо список фото товару перед видаленням
+        const productToDelete = products.find(p => p.id === id);
+        if (productToDelete && productToDelete.images) {
+          await deleteStorageFiles(productToDelete.images);
+        }
+
         const { error } = await supabase
           .from('products')
           .delete()
@@ -596,6 +603,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       try {
         if (!supabase) throw new Error('Supabase не налаштовано');
         
+        // Отримуємо список фото оголошення перед видаленням
+        const adToDelete = ads.find(a => a.id === id);
+        if (adToDelete && adToDelete.images) {
+          await deleteStorageFiles(adToDelete.images);
+        }
+
         const { data, error } = await supabase
           .from('ads')
           .delete()
@@ -748,7 +761,24 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 const optimizedImages = await Promise.all(
                   product.images.map(async (img: string) => {
                     if (img && typeof img === 'string' && img.startsWith('data:image')) {
-                      return await compressImage(img);
+                      // Стискаємо
+                      const compressed = await compressImage(img);
+                      const blob = dataURLtoBlob(compressed);
+                      
+                      // Завантажуємо в Storage замість збереження Base64
+                      const fileName = `optimized-${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
+                      const filePath = `products/${fileName}`;
+                      
+                      const { error: uploadError } = await supabase.storage
+                        .from('product-images')
+                        .upload(filePath, blob, { contentType: 'image/jpeg' });
+                      
+                      if (!uploadError) {
+                        const { data: { publicUrl } } = supabase.storage
+                          .from('product-images')
+                          .getPublicUrl(filePath);
+                        return publicUrl;
+                      }
                     }
                     return img;
                   })
@@ -781,7 +811,24 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 const optimizedImages = await Promise.all(
                   ad.images.map(async (img: string) => {
                     if (img && typeof img === 'string' && img.startsWith('data:image')) {
-                      return await compressImage(img);
+                      // Стискаємо
+                      const compressed = await compressImage(img);
+                      const blob = dataURLtoBlob(compressed);
+                      
+                      // Завантажуємо в Storage замість збереження Base64
+                      const fileName = `optimized-${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
+                      const filePath = `ads/${fileName}`;
+                      
+                      const { error: uploadError } = await supabase.storage
+                        .from('product-images')
+                        .upload(filePath, blob, { contentType: 'image/jpeg' });
+                      
+                      if (!uploadError) {
+                        const { data: { publicUrl } } = supabase.storage
+                          .from('product-images')
+                          .getPublicUrl(filePath);
+                        return publicUrl;
+                      }
                     }
                     return img;
                   })
@@ -808,6 +855,31 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         setIsOptimizing(false);
       }
     });
+  };
+
+  const deleteStorageFiles = async (urls: string[]) => {
+    if (!supabase || !urls || urls.length === 0) return;
+    
+    const paths = urls
+      .map(url => {
+        if (typeof url === 'string' && url.includes('product-images/')) {
+          const parts = url.split('product-images/');
+          if (parts.length > 1) {
+            return parts[1].split('?')[0];
+          }
+        }
+        return null;
+      })
+      .filter((path): path is string => path !== null);
+
+    if (paths.length > 0) {
+      try {
+        const { error } = await supabase.storage.from('product-images').remove(paths);
+        if (error) console.error('Error deleting storage files:', error);
+      } catch (err) {
+        console.error('Failed to remove files from storage:', err);
+      }
+    }
   };
 
   const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.5): Promise<string> => {
@@ -933,6 +1005,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     showConfirm(`Ви впевнені, що хочете видалити ${selectedProductIds.length} товарів?`, async () => {
       setIsBulkDeleting(true);
       try {
+        // Отримуємо всі фото для вибраних товарів
+        const productsToDelete = products.filter(p => selectedProductIds.includes(p.id));
+        const allImages: string[] = [];
+        productsToDelete.forEach(p => {
+          if (p.images) allImages.push(...p.images);
+        });
+        
+        if (allImages.length > 0) {
+          await deleteStorageFiles(allImages);
+        }
+
         const { error } = await supabase
           .from('products')
           .delete()
@@ -1176,6 +1259,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   type="text"
                   id="admin_search"
                   name="admin_search"
+                  autoComplete="off"
                   placeholder="Пошук товару за назвою або кодом..."
                   value={adminSearchQuery}
                   onChange={(e) => setAdminSearchQuery(e.target.value)}
@@ -1762,11 +1846,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </h3>
                 <p className="text-sm text-stone-500">Цей банер буде відображатися у верхній частині розділу "Оголошення". Якщо фото не завантажене, банер не буде видно.</p>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-stone-700">Фото банера</label>
+                  <label htmlFor="banner-upload" className="text-sm font-medium text-stone-700">Фото банера</label>
                   <div className="flex gap-4 items-start">
                     <div className="flex-1 space-y-4">
                       <input 
                         type="file"
+                        id="banner-upload"
                         accept="image/*"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
@@ -1806,7 +1891,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                           }
                         }}
                         className="hidden"
-                        id="banner-upload"
                       />
                       <div className="flex gap-2">
                         <button 
@@ -1905,7 +1989,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     </p>
                     <div className="bg-stone-900 p-4 rounded-xl overflow-x-auto relative group">
                       <button 
-                        onClick={() => copyToClipboard(`-- Створення таблиць та додавання відсутніх колонок
+                        onClick={() => copyToClipboard(`-- 1. Створення таблиць
 CREATE TABLE IF NOT EXISTS products (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   name TEXT NOT NULL,
@@ -1955,7 +2039,35 @@ CREATE TABLE IF NOT EXISTS site_settings (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Додавання колонок, якщо таблиці вже існують
+-- 2. Налаштування Storage (Виправлення помилки RLS)
+-- Виконайте це, щоб дозволити завантаження фото
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('product-images', 'product-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Дозволити всім (anon) завантажувати та переглядати фото
+CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+CREATE POLICY "Public Insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Public Update" ON storage.objects FOR UPDATE WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (bucket_id = 'product-images');
+
+-- 3. Налаштування RLS для таблиць (якщо увімкнено)
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for products" ON products FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE ads ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for ads" ON ads FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for reviews" ON reviews FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE stats ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for stats" ON stats FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE site_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for site_settings" ON site_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. Додавання колонок, якщо таблиці вже існують
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS radius TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;
@@ -1971,7 +2083,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                         <Plus size={16} />
                       </button>
                       <pre className="text-[10px] text-emerald-400 font-mono leading-relaxed">
-{`-- Створення таблиць та додавання відсутніх колонок
+{`-- 1. Створення таблиць
 CREATE TABLE IF NOT EXISTS products (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   name TEXT NOT NULL,
@@ -2021,7 +2133,35 @@ CREATE TABLE IF NOT EXISTS site_settings (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Додавання колонок, якщо таблиці вже існують
+-- 2. Налаштування Storage (Виправлення помилки RLS)
+-- Виконайте це, щоб дозволити завантаження фото
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('product-images', 'product-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Дозволити всім (anon) завантажувати та переглядати фото
+CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+CREATE POLICY "Public Insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Public Update" ON storage.objects FOR UPDATE WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Public Delete" ON storage.objects FOR DELETE USING (bucket_id = 'product-images');
+
+-- 3. Налаштування RLS для таблиць (якщо увімкнено)
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for products" ON products FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE ads ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for ads" ON ads FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for reviews" ON reviews FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE stats ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for stats" ON stats FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE site_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for site_settings" ON site_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. Додавання колонок, якщо таблиці вже існують
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS radius TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;
@@ -2048,7 +2188,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Catalog Header */}
                   <div className="space-y-4">
-                    <label className="text-sm font-medium text-stone-700">Фон Каталогу</label>
+                    <label htmlFor="catalog-header-upload" className="text-sm font-medium text-stone-700">Фон Каталогу</label>
                     <div className="aspect-video rounded-2xl overflow-hidden border border-stone-200 bg-stone-50 relative group">
                       <img 
                         src={siteSettings?.catalog_header_image || "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&q=80&w=1920"} 
@@ -2109,7 +2249,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
 
                   {/* Ads Header */}
                   <div className="space-y-4">
-                    <label className="text-sm font-medium text-stone-700">Фон Оголошень</label>
+                    <label htmlFor="ads-header-upload" className="text-sm font-medium text-stone-700">Фон Оголошень</label>
                     <div className="aspect-video rounded-2xl overflow-hidden border border-stone-200 bg-stone-50 relative group">
                       <img 
                         src={siteSettings?.ads_header_image || "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&q=80&w=1920"} 
@@ -2206,6 +2346,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     id="ad_title"
                     name="title"
                     type="text"
+                    autoComplete="off"
                     value={adFormData.title}
                     onChange={e => setAdFormData({ ...adFormData, title: e.target.value })}
                     className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
@@ -2218,6 +2359,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     id="ad_price"
                     name="price"
                     type="number"
+                    autoComplete="off"
                     value={adFormData.price}
                     onChange={e => setAdFormData({ ...adFormData, price: e.target.value })}
                     className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
@@ -2233,6 +2375,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       id="ad_phone"
                       name="phone"
                       type="text"
+                      autoComplete="off"
                       value={adFormData.phone}
                       onChange={e => setAdFormData({ ...adFormData, phone: e.target.value })}
                       className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
@@ -2273,6 +2416,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     required
                     id="ad_description"
                     name="description"
+                    autoComplete="off"
                     rows={4}
                     value={adFormData.description}
                     onChange={e => setAdFormData({ ...adFormData, description: e.target.value })}
@@ -2281,7 +2425,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                 </div>
 
                 <div className="space-y-4">
-                  <label className="text-sm font-medium text-stone-700">Зображення ({adFormData.images.length}/10)</label>
+                  <label htmlFor="ad_images" className="text-sm font-medium text-stone-700">Зображення ({adFormData.images.length}/10)</label>
                   <input 
                     type="file" 
                     id="ad_images"
@@ -2379,6 +2523,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       id="product_name"
                       name="name"
                       type="text"
+                      autoComplete="off"
                       value={formData.name}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
                       className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
@@ -2392,6 +2537,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       id="product_price"
                       name="price"
                       type="number"
+                      autoComplete="off"
                       value={formData.price}
                       onChange={e => setFormData({ ...formData, price: e.target.value })}
                       className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
@@ -2419,6 +2565,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                         id="product_old_price"
                         name="old_price"
                         type="number"
+                        autoComplete="off"
                         value={formData.old_price}
                         onChange={e => setFormData({ ...formData, old_price: e.target.value })}
                         className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
@@ -2447,6 +2594,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       id="product_sku"
                       name="sku"
                       type="text"
+                      autoComplete="off"
                       value={formData.sku}
                       onChange={e => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
                       className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none font-mono"
@@ -2513,6 +2661,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     required
                     id="product_description"
                     name="description"
+                    autoComplete="off"
                     rows={4}
                     value={formData.description}
                     onChange={e => setFormData({ ...formData, description: e.target.value })}
@@ -2523,7 +2672,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
 
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-stone-700">Зображення ({formData.images.length}/10)</label>
+                    <label htmlFor="product_images_file" className="text-sm font-medium text-stone-700">Зображення ({formData.images.length}/10)</label>
                   </div>
                   
                   {/* Hidden file input */}
@@ -2544,6 +2693,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       id="product_image_url"
                       name="image_url"
                       type="text"
+                      autoComplete="off"
                       value={imageUrlInput}
                       onChange={e => setImageUrlInput(e.target.value)}
                       className="flex-1 px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"

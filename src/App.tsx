@@ -574,6 +574,7 @@ export default function App() {
                 id="search_query"
                 name="search"
                 type="text" 
+                autoComplete="off"
                 placeholder="Пошук..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -1422,11 +1423,12 @@ export default function App() {
               <h3 className="text-2xl font-bold mb-6 text-center">Вхід для адміна</h3>
               <form onSubmit={handleAdminLogin} className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-stone-600 mb-1 block">Пароль</label>
+                  <label htmlFor="admin_password_modal" className="text-sm font-medium text-stone-600 mb-1 block">Пароль</label>
                   <input 
-                    id="admin_password"
+                    id="admin_password_modal"
                     name="password"
                     type="password" 
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
