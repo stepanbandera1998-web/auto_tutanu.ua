@@ -50,7 +50,6 @@ export default function App() {
   const [totalProductsCount, setTotalProductsCount] = useState(0);
   const [filteredCount, setFilteredCount] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
-  const PRODUCTS_PER_PAGE = 24;
   const [isLoadingAds, setIsLoadingAds] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
@@ -249,8 +248,7 @@ export default function App() {
       }
       
       const { data, error, count } = await query
-        .order('created_at', { ascending: false })
-        .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
+        .order('created_at', { ascending: false });
       
       if (error) {
         // Якщо це таймаут (57014), спробуємо ще раз один раз
@@ -262,26 +260,22 @@ export default function App() {
         throw error;
       }
       
-      // Якщо на першій сторінці порожньо, спробуємо ще раз через секунду (може бути проблема з'єднання на мобільних)
-      if (page === 0 && (!data || data.length === 0) && !isRetry) {
+      // Якщо порожньо, спробуємо ще раз через секунду (може бути проблема з'єднання на мобільних)
+      if ((!data || data.length === 0) && !isRetry) {
         console.log('Товарів не знайдено при першому запиті, спроба повтору...');
         setTimeout(() => fetchProducts(0, true), 1000);
         return;
       }
       
-      if (page === 0) {
-        setProducts(data || []);
-        setFilteredCount(count || 0);
-        // Якщо немає фільтрів, це загальна кількість товарів
-        if (!selectedRadius && !searchQuery) {
-          setTotalProductsCount(count || 0);
-        }
-      } else {
-        setProducts(prev => [...prev, ...(data || [])]);
+      setProducts(data || []);
+      setFilteredCount(count || 0);
+      // Якщо немає фільтрів, це загальна кількість товарів
+      if (!selectedRadius && !searchQuery) {
+        setTotalProductsCount(count || 0);
       }
       
-      setProductsPage(page);
-      setHasMoreProducts((data || []).length === PRODUCTS_PER_PAGE);
+      setProductsPage(0);
+      setHasMoreProducts(false);
     } catch (error: any) {
       console.error('Error fetching products:', error);
       const errorMessage = error.message || 'Помилка завантаження товарів';
@@ -850,18 +844,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            {hasMoreProducts && products.length > 0 && (
-              <div className="mt-12 text-center">
-                <button 
-                  onClick={() => fetchProducts(productsPage + 1)}
-                  disabled={isLoadingProducts}
-                  className="bg-stone-900 text-white px-8 py-4 rounded-full font-bold hover:bg-stone-800 transition-all disabled:opacity-50"
-                >
-                  {isLoadingProducts ? 'Завантаження...' : 'Завантажити ще товари'}
-                </button>
-              </div>
-            )}
           </main>
         </>
       )}

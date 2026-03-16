@@ -90,7 +90,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [productsPage, setProductsPage] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
-  const PRODUCTS_PER_PAGE = 20;
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -232,13 +231,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     try {
       if (!supabase) throw new Error('Supabase not configured');
       setIsLoadingProducts(true);
-      console.log(`Fetching products from Supabase (page ${page})...`);
+      console.log(`Fetching all products from Supabase...`);
       
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .order('created_at', { ascending: false })
-        .range(page * PRODUCTS_PER_PAGE, (page + 1) * PRODUCTS_PER_PAGE - 1);
+        .order('created_at', { ascending: false });
       
       if (error) {
         console.error('Supabase error fetching products:', error);
@@ -247,18 +245,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       
       console.log(`Fetched ${data?.length || 0} products from Supabase`);
       
-      if (page === 0) {
-        setProducts(data || []);
-      } else {
-        setProducts(prev => [...prev, ...(data || [])]);
-      }
-      
-      setProductsPage(page);
-      setHasMoreProducts((data || []).length === PRODUCTS_PER_PAGE);
+      setProducts(data || []);
+      setProductsPage(0);
+      setHasMoreProducts(false);
     } catch (error: any) {
       console.error('Error fetching products:', error);
       showNotification('Помилка завантаження товарів: ' + (error.message || 'Невідома помилка'), 'error');
-      if (page === 0) setProducts([]);
+      setProducts([]);
     } finally {
       setIsLoadingProducts(false);
     }
@@ -1482,17 +1475,6 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         )}
                       </tbody>
                     </table>
-                    {hasMoreProducts && products.length > 0 && (
-                      <div className="p-4 border-t border-stone-100 text-center">
-                        <button 
-                          onClick={() => fetchProducts(productsPage + 1)}
-                          disabled={isLoadingProducts}
-                          className="text-stone-600 font-medium hover:text-stone-900 transition-colors disabled:opacity-50"
-                        >
-                          {isLoadingProducts ? 'Завантаження...' : 'Завантажити ще'}
-                        </button>
-                      </div>
-                    )}
                   </>
                 )}
               </div>
