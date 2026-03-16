@@ -39,6 +39,51 @@ const TELEGRAM_CHANNEL_LINK = "https://t.me/auto_tutanu";
 
 type Tab = 'catalog' | 'reviews' | 'ads';
 
+// Memoized Product Card to prevent unnecessary re-renders
+const ProductCard = React.memo(({ product, onSelect }: { product: any, onSelect: (p: any) => void }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.4 }}
+      onClick={() => onSelect(product)}
+      className="group cursor-pointer"
+    >
+      <div className="aspect-square rounded-3xl overflow-hidden bg-white mb-4 relative border border-stone-100">
+        <img 
+          src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/800/1000'} 
+          className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
+          alt={product.name || 'Товар'}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          draggable="false"
+        />
+        {product.is_sale && (
+          <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
+            Знижка
+          </div>
+        )}
+        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
+            Детальніше
+          </span>
+        </div>
+      </div>
+      <div className="flex justify-between items-start mb-1">
+        <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
+        <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
+        {product.is_sale && product.old_price && (
+          <p className="text-stone-400 font-mono text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -760,11 +805,11 @@ export default function App() {
                 </div>
               ) : filteredProducts.length > 0 ? (
                 filteredProducts.map((product) => (
-                  <motion.div 
-                    key={product.id}
-                    layoutId={`product-${product.id}`}
-                    onClick={async () => {
-                      setSelectedProduct(product);
+                  <ProductCard 
+                    key={product.id} 
+                    product={product} 
+                    onSelect={async (p) => {
+                      setSelectedProduct(p);
                       setCurrentImageIndex(0);
                       
                       // Логування перегляду на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
@@ -773,7 +818,7 @@ export default function App() {
                         fetch('/api/view', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ productId: product.id })
+                          body: JSON.stringify({ productId: p.id })
                         }).then(res => {
                           if (!res.ok) console.warn('Сервер повернув помилку при логуванні перегляду');
                         }).catch(err => {
@@ -786,46 +831,14 @@ export default function App() {
                         try {
                           await supabase
                             .from('products')
-                            .update({ views: (product.views || 0) + 1 })
-                            .eq('id', product.id);
+                            .update({ views: (p.views || 0) + 1 })
+                            .eq('id', p.id);
                         } catch (err) {
                           console.error('Помилка оновлення переглядів:', err);
                         }
                       }
                     }}
-                    className="group cursor-pointer"
-                  >
-                    <div className="aspect-square rounded-3xl overflow-hidden bg-white mb-4 relative border border-stone-100">
-                      <img 
-                        src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/800/1000'} 
-                        className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
-                        alt={product.name || 'Товар'}
-                        referrerPolicy="no-referrer"
-                        loading="lazy"
-                        draggable="false"
-                      />
-                      {product.is_sale && (
-                        <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
-                          Знижка
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
-                          Детальніше
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
-                      <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
-                      {product.is_sale && product.old_price && (
-                        <p className="text-stone-400 font-mono text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
-                      )}
-                    </div>
-                  </motion.div>
+                  />
                 ))
               ) : (
                 <div className="col-span-full py-20 text-center">
@@ -945,7 +958,10 @@ export default function App() {
               ads.map((ad) => (
                 <motion.div 
                   key={ad.id} 
-                  layoutId={`ad-${ad.id}`}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.4 }}
                   onClick={() => {
                     if (!ad.is_placeholder) {
                       setSelectedAd(ad);
@@ -1008,10 +1024,13 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedAd(null)}
-              className="absolute inset-0 bg-stone-900/60 backdrop-blur-md"
+              className="absolute inset-0 bg-stone-900/80"
             />
             <motion.div 
-              layoutId={`ad-${selectedAd.id}`}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
               className="relative bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row h-auto max-h-[95vh] md:max-h-[85vh]"
             >
               <div className="md:w-1/2 relative bg-stone-50 h-[250px] md:h-auto border-r border-stone-100 flex items-center justify-center">
@@ -1140,7 +1159,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowAdModal(false)}
-              className="absolute inset-0 bg-stone-900/60 backdrop-blur-md"
+              className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm"
             />
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
@@ -1199,7 +1218,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowReviewForm(false)}
-              className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
+              className="absolute inset-0 bg-stone-900/40"
             />
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
@@ -1278,11 +1297,14 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedProduct(null)}
-              className="absolute inset-0 bg-stone-900/60 backdrop-blur-md"
+              className="absolute inset-0 bg-stone-900/80"
             />
             <motion.div 
-              layoutId={`product-${selectedProduct.id}`}
-              className="relative bg-white rounded-3xl sm:rounded-[2.5rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row max-h-[95vh] sm:max-h-[90vh]"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="relative bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row h-auto max-h-[95vh] md:max-h-[85vh]"
             >
               <div className="md:w-1/2 relative bg-white h-[250px] sm:h-[400px] md:h-auto border-b md:border-b-0 md:border-r border-stone-100">
                 <img 
@@ -1329,7 +1351,7 @@ export default function App() {
               <div className="md:w-1/2 p-6 sm:p-8 md:p-12 overflow-y-auto">
                 <button 
                   onClick={() => setSelectedProduct(null)}
-                  className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 text-stone-400 hover:text-stone-900 transition-colors z-10 bg-white/80 rounded-full backdrop-blur-sm"
+                  className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 text-stone-400 hover:text-stone-900 transition-colors z-10 bg-white/80 rounded-full"
                 >
                   <X size={20} className="sm:w-6 sm:h-6" />
                 </button>
@@ -1403,7 +1425,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowAdminLogin(false)}
-              className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
+              className="absolute inset-0 bg-stone-900/40"
             />
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
