@@ -100,6 +100,7 @@ export default function App() {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [password, setPassword] = useState('');
@@ -1038,10 +1039,11 @@ export default function App() {
                   src={selectedAd && Array.isArray(selectedAd.images) && selectedAd.images.length > 0 
                     ? selectedAd.images[currentImageIndex] 
                     : 'https://picsum.photos/seed/ad/800/1000'} 
-                  className="w-full h-full object-contain p-2 md:p-6"
+                  className="w-full h-full object-contain p-2 md:p-6 cursor-zoom-in"
                   alt=""
                   referrerPolicy="no-referrer"
                   draggable="false"
+                  onClick={() => setFullscreenImage(selectedAd && Array.isArray(selectedAd.images) && selectedAd.images.length > 0 ? selectedAd.images[currentImageIndex] : null)}
                 />
                 {selectedAd && Array.isArray(selectedAd.images) && selectedAd.images.length > 1 && (
                   <>
@@ -1311,10 +1313,11 @@ export default function App() {
                   src={selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 0
                     ? selectedProduct.images[currentImageIndex] 
                     : 'https://picsum.photos/seed/car/800/1000'} 
-                  className="w-full h-full object-contain p-2 sm:p-4"
+                  className="w-full h-full object-contain p-2 sm:p-4 cursor-zoom-in"
                   alt={selectedProduct?.name || ''}
                   referrerPolicy="no-referrer"
                   draggable="false"
+                  onClick={() => setFullscreenImage(selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 0 ? selectedProduct.images[currentImageIndex] : null)}
                 />
                 {selectedProduct && Array.isArray(selectedProduct.images) && selectedProduct.images.length > 1 && (
                   <>
@@ -1411,6 +1414,36 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Fullscreen Image Preview */}
+      <AnimatePresence>
+        {fullscreenImage && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full h-full flex items-center justify-center p-4"
+              onClick={() => setFullscreenImage(null)}
+            >
+              <button 
+                onClick={() => setFullscreenImage(null)}
+                className="absolute top-6 right-6 p-3 text-white/70 hover:text-white transition-colors z-10 bg-black/20 rounded-full backdrop-blur-sm"
+              >
+                <X size={32} />
+              </button>
+              <img 
+                src={fullscreenImage} 
+                className="max-w-full max-h-full object-contain shadow-2xl"
+                alt="Повний екран"
+                referrerPolicy="no-referrer"
+                onClick={(e) => e.stopPropagation()}
+              />
             </motion.div>
           </div>
         )}
