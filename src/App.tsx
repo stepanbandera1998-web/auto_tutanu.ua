@@ -114,7 +114,7 @@ export default function App() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [selectedRadius, setSelectedRadius] = useState<string | null>(null);
 
-  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured'>('checking');
+  const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured' | 'missing-tables'>('checking');
   const isFirstMount = useRef(true);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -161,16 +161,16 @@ export default function App() {
         // Перевірка з'єднання шляхом отримання одного ID з відгуків
         const { error } = await supabase.from('reviews').select('id').limit(1);
         if (error) {
-          // Якщо помилка "relation does not exist", таблиця відсутня, але з'єднання в порядку
+          // Якщо помилка "relation does not exist", таблиця відсутня
           if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
-            console.log('Supabase підключено, але таблиці відсутні');
-            setSupabaseStatus('connected');
+            console.warn('Supabase підключено, але таблиця "reviews" відсутня');
+            setSupabaseStatus('missing-tables');
           } else {
-            console.warn('Тест з\'єднання Supabase повернув помилку:', error);
+            console.error('Тест з\'єднання Supabase повернув помилку:', error);
             setSupabaseStatus('error');
           }
         } else {
-          console.log('Тест з\'єднання Supabase успішний');
+          console.log('Тест з\'єднання Supabase успішний (таблиці знайдено)');
           setSupabaseStatus('connected');
         }
       } catch (err) {
@@ -608,11 +608,13 @@ export default function App() {
             <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-stone-100 rounded-full">
               <div className={`w-2 h-2 rounded-full ${
                 supabaseStatus === 'connected' ? 'bg-emerald-500' : 
-                supabaseStatus === 'checking' ? 'bg-amber-500 animate-pulse' : 'bg-red-500'
+                supabaseStatus === 'checking' ? 'bg-amber-500 animate-pulse' : 
+                supabaseStatus === 'missing-tables' ? 'bg-amber-400' : 'bg-red-500'
               }`} />
               <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
                 {supabaseStatus === 'connected' ? 'Supabase Live' : 
                  supabaseStatus === 'checking' ? 'Connecting...' : 
+                 supabaseStatus === 'missing-tables' ? 'Missing Tables' : 
                  supabaseStatus === 'not-configured' ? 'Supabase Offline' : 'Supabase Error'}
               </span>
             </div>
