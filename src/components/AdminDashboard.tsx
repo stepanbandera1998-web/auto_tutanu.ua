@@ -22,7 +22,10 @@ import {
   Send,
   MessageCircle,
   Settings,
-  Search
+  Search,
+  Database,
+  Clipboard,
+  Copy
 } from 'lucide-react';
 import { Product, Stats, Ad, Review, SiteSettings } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -49,7 +52,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [isAddingAd, setIsAddingAd] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
-  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats' | 'settings'>('products');
+  const [activeView, setActiveView] = useState<'products' | 'ads' | 'reviews' | 'stats' | 'settings' | 'db-stats'>('products');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -86,10 +89,25 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   const [isChartVisible, setIsChartVisible] = useState(false);
+  const [usageStats, setUsageStats] = useState<{
+    tables: { name: string; count: number }[];
+    storage: { bucket: string; fileCount: number; totalSize: number };
+    lastUpdated: Date | null;
+  } | null>(null);
+  const [isFetchingUsage, setIsFetchingUsage] = useState(false);
 
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [productsPage, setProductsPage] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
+
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -114,6 +132,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     if (activeView === 'stats') {
       const timer = setTimeout(() => setIsChartVisible(true), 150);
       return () => clearTimeout(timer);
+    } else if (activeView === 'db-stats') {
+      fetchUsageStats();
+      setIsChartVisible(false);
     } else {
       setIsChartVisible(false);
     }
@@ -156,16 +177,25 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       if (!error && data) {
         setSiteSettings(data);
       } else if (error) {
-        // Якщо помилка пов'язана з відсутністю колонки maintenance_mode
-        if (error.message?.includes('maintenance_mode')) {
-          console.warn('Колонка maintenance_mode відсутня, завантажуємо базові налаштування');
+        // Якщо помилка пов'язана з відсутністю нових колонок
+        if (error.message?.includes('maintenance_mode') || 
+            error.message?.includes('storage_limit_enabled') || 
+            error.message?.includes('storage_limit_gb')) {
+          console.warn('Деякі колонки налаштувань відсутні, завантажуємо базові налаштування');
+          
+          // Отримуємо тільки ті колонки, які точно є
           const { data: baseData, error: baseError } = await supabase
             .from('site_settings')
             .select('id, banner_url, catalog_header_image, ads_header_image, updated_at')
             .single();
           
           if (!baseError && baseData) {
-            setSiteSettings({ ...baseData, maintenance_mode: false });
+            setSiteSettings({ 
+              ...baseData, 
+              maintenance_mode: data?.maintenance_mode || false,
+              storage_limit_enabled: data?.storage_limit_enabled || false,
+              storage_limit_gb: data?.storage_limit_gb || 3.5
+            });
           }
         } else if (error.code === 'PGRST116') {
           // Налаштування не знайдено, створюємо за замовчуванням
@@ -186,14 +216,40 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     setIsSubmitting(true);
     try {
       if (!supabase) throw new Error('Supabase not configured');
+      
+      // Видаляємо старі фото з сховища, якщо вони замінюються або видаляються
+      const removedUrls: string[] = [];
+      if (newSettings.banner_url !== undefined && siteSettings?.banner_url && newSettings.banner_url !== siteSettings.banner_url) {
+        removedUrls.push(siteSettings.banner_url);
+      }
+      if (newSettings.catalog_header_image !== undefined && siteSettings?.catalog_header_image && newSettings.catalog_header_image !== siteSettings.catalog_header_image) {
+        removedUrls.push(siteSettings.catalog_header_image);
+      }
+      if (newSettings.ads_header_image !== undefined && siteSettings?.ads_header_image && newSettings.ads_header_image !== siteSettings.ads_header_image) {
+        removedUrls.push(siteSettings.ads_header_image);
+      }
+
+      if (removedUrls.length > 0) {
+        console.log('Removing old settings images from storage:', removedUrls);
+        await deleteStorageFiles(removedUrls);
+      }
+
       const { error } = await supabase
         .from('site_settings')
         .update(newSettings)
         .eq('id', siteSettings?.id || '00000000-0000-0000-0000-000000000000');
       
-      if (error) throw error;
-      showNotification('Налаштування збережено');
-      fetchSettings();
+      if (error) {
+        if (error.message?.includes('storage_limit_enabled') || error.message?.includes('storage_limit_gb')) {
+          showNotification('Помилка: Потрібно додати нові колонки в базу даних Supabase. Скопіюйте SQL з опису.', 'error');
+          console.error('Missing columns SQL: ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS storage_limit_enabled BOOLEAN DEFAULT false; ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS storage_limit_gb FLOAT8 DEFAULT 3.5;');
+        } else {
+          throw error;
+        }
+      } else {
+        showNotification('Налаштування збережено');
+        fetchSettings();
+      }
     } catch (error: any) {
       showNotification('Помилка: ' + error.message, 'error');
     } finally {
@@ -407,6 +463,87 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     });
   };
 
+  const fetchUsageStats = async () => {
+    if (!supabase) return;
+    setIsFetchingUsage(true);
+    try {
+      const tableNames = ['products', 'ads', 'reviews', 'stats', 'site_settings'];
+      const tableStats = [];
+      
+      for (const table of tableNames) {
+        const { count, error } = await supabase
+          .from(table)
+          .select('*', { count: 'exact', head: true });
+        
+        if (!error) {
+          tableStats.push({ name: table, count: count || 0 });
+        }
+      }
+
+      // Storage stats
+      let totalSize = 0;
+      let fileCount = 0;
+      
+      // We list common folders: 'products/', 'ads/', 'settings/'
+      const folders = ['products', 'ads', 'settings'];
+      for (const folder of folders) {
+        const { data, error } = await supabase.storage.from('product-images').list(folder, { limit: 1000 });
+        if (!error && data) {
+          data.forEach(file => {
+            if (file.metadata) {
+              totalSize += file.metadata.size;
+              fileCount++;
+            }
+          });
+        }
+      }
+
+      setUsageStats({
+        tables: tableStats,
+        storage: { bucket: 'product-images', fileCount, totalSize },
+        lastUpdated: new Date()
+      });
+      
+      // Show notification only if it's a manual refresh
+      if (activeView === 'db-stats' || activeView === 'stats') {
+        showNotification('Дані статистики успішно оновлено', 'success');
+      }
+      
+      return { totalSize, fileCount };
+    } catch (err) {
+      console.error('Error fetching usage stats:', err);
+      return null;
+    } finally {
+      setIsFetchingUsage(false);
+    }
+  };
+
+  const checkStorageLimit = async (newFileSize: number = 0) => {
+    if (!siteSettings?.storage_limit_enabled) return true;
+    
+    let currentUsage = usageStats;
+    if (!currentUsage) {
+      const stats = await fetchUsageStats();
+      if (stats) {
+        currentUsage = {
+          tables: [],
+          storage: { bucket: 'product-images', fileCount: stats.fileCount, totalSize: stats.totalSize },
+          lastUpdated: new Date()
+        };
+      }
+    }
+    
+    const currentSize = currentUsage?.storage.totalSize || 0;
+    const limitGb = siteSettings.storage_limit_gb || 3.5;
+    const limitBytes = limitGb * 1024 * 1024 * 1024;
+    
+    if (currentSize + newFileSize > limitBytes) {
+      showNotification(`Досягнуто ліміт сховища (${limitGb} GB). Видаліть старі фото або вимкніть обмеження в налаштуваннях.`, 'error');
+      return false;
+    }
+    return true;
+  };
+
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generateNextSku = (currentProducts: Product[]) => {
@@ -483,6 +620,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         
         let result;
         if (editingProduct) {
+          // Видаляємо фото, які були видалені зі списку при редагуванні
+          const removedImages = editingProduct.images.filter(img => !formData.images.includes(img));
+          if (removedImages.length > 0) {
+            console.log(`Removing ${removedImages.length} unused images from storage`);
+            await deleteStorageFiles(removedImages);
+          }
+
           result = await supabase
             .from('products')
             .update(productData)
@@ -546,6 +690,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       };
 
       if (editingAd) {
+        // Видаляємо фото, які були видалені зі списку при редагуванні
+        const removedImages = editingAd.images.filter(img => !adFormData.images.includes(img));
+        if (removedImages.length > 0) {
+          console.log(`Removing ${removedImages.length} unused images from storage (ad)`);
+          await deleteStorageFiles(removedImages);
+        }
+
         const { error } = await supabase
           .from('ads')
           .update(adData)
@@ -596,10 +747,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       try {
         if (!supabase) throw new Error('Supabase не налаштовано');
         
-        // Отримуємо список фото товару перед видаленням
-        const productToDelete = products.find(p => p.id === id);
-        if (productToDelete && productToDelete.images) {
-          await deleteStorageFiles(productToDelete.images);
+        // Отримуємо актуальні дані про товар перед видаленням, щоб точно мати список фото
+        const { data: productData } = await supabase
+          .from('products')
+          .select('images')
+          .eq('id', id)
+          .single();
+
+        if (productData && productData.images && productData.images.length > 0) {
+          console.log(`Deleting ${productData.images.length} images for product ${id}`);
+          await deleteStorageFiles(productData.images);
         }
 
         const { error } = await supabase
@@ -621,10 +778,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       try {
         if (!supabase) throw new Error('Supabase не налаштовано');
         
-        // Отримуємо список фото оголошення перед видаленням
-        const adToDelete = ads.find(a => a.id === id);
-        if (adToDelete && adToDelete.images) {
-          await deleteStorageFiles(adToDelete.images);
+        // Отримуємо актуальні дані про оголошення перед видаленням
+        const { data: adData } = await supabase
+          .from('ads')
+          .select('images')
+          .eq('id', id)
+          .single();
+
+        if (adData && adData.images && adData.images.length > 0) {
+          console.log(`Deleting ${adData.images.length} images for ad ${id}`);
+          await deleteStorageFiles(adData.images);
         }
 
         const { data, error } = await supabase
@@ -924,8 +1087,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     const paths = urls
       .map(url => {
         if (typeof url === 'string' && url.includes('product-images/')) {
+          // Витягуємо шлях після імені бакета
           const parts = url.split('product-images/');
           if (parts.length > 1) {
+            // Видаляємо query параметри, якщо вони є
             return parts[1].split('?')[0];
           }
         }
@@ -935,8 +1100,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
     if (paths.length > 0) {
       try {
-        const { error } = await supabase.storage.from('product-images').remove(paths);
-        if (error) console.error('Error deleting storage files:', error);
+        console.log('Attempting to delete files from storage:', paths);
+        const { data, error } = await supabase.storage.from('product-images').remove(paths);
+        if (error) {
+          console.error('Error deleting storage files:', error);
+        } else {
+          console.log('Successfully deleted files from storage:', data);
+        }
       } catch (err) {
         console.error('Failed to remove files from storage:', err);
       }
@@ -1013,6 +1183,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         const compressedBase64 = await compressImage(base64, 1000, 1000, 0.7);
         const blob = dataURLtoBlob(compressedBase64);
 
+        // Перевірка ліміту сховища
+        const canUpload = await checkStorageLimit(blob.size);
+        if (!canUpload) break;
+
         const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
         const filePath = `${type}s/${fileName}`;
 
@@ -1067,15 +1241,26 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     showConfirm(`Ви впевнені, що хочете видалити ${selectedProductIds.length} товарів?`, async () => {
       setIsBulkDeleting(true);
       try {
-        // Отримуємо всі фото для вибраних товарів
-        const productsToDelete = products.filter(p => selectedProductIds.includes(p.id));
-        const allImages: string[] = [];
-        productsToDelete.forEach(p => {
-          if (p.images) allImages.push(...p.images);
-        });
+        if (!supabase) throw new Error('Supabase not configured');
+
+        // Отримуємо всі фото для вибраних товарів безпосередньо з бази даних
+        const { data: productsData } = await supabase
+          .from('products')
+          .select('images')
+          .in('id', selectedProductIds);
         
-        if (allImages.length > 0) {
-          await deleteStorageFiles(allImages);
+        if (productsData && productsData.length > 0) {
+          const allImages: string[] = [];
+          productsData.forEach(p => {
+            if (p.images && Array.isArray(p.images)) {
+              allImages.push(...p.images);
+            }
+          });
+          
+          if (allImages.length > 0) {
+            console.log(`Bulk deleting ${allImages.length} images from storage`);
+            await deleteStorageFiles(allImages);
+          }
         }
 
         const { error } = await supabase
@@ -1087,7 +1272,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         
         showNotification(`Видалено ${selectedProductIds.length} товарів`, 'success');
         setSelectedProductIds([]);
-        fetchProducts();
+        fetchProducts(0);
       } catch (err) {
         console.error('Bulk delete error:', err);
         showNotification('Помилка при масовому видаленні', 'error');
@@ -1148,14 +1333,14 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   });
 
   return (
-    <div className="min-h-screen bg-stone-50 p-4 md:p-8">
+    <div className="min-h-screen bg-stone-50 p-3 md:p-8">
       <AnimatePresence>
         {isUploading && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md bg-white rounded-2xl shadow-2xl border border-stone-100 p-4 flex items-center gap-4"
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[92%] max-w-md bg-white rounded-2xl shadow-2xl border border-stone-100 p-4 flex items-center gap-4"
           >
             <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
               <ImageIcon size={20} className="animate-pulse" />
@@ -1178,15 +1363,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       </AnimatePresence>
 
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Панель адміністратора</h1>
-            <p className="text-stone-500">Керуйте вашим магазином та переглядайте статистику</p>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Панель адміністратора</h1>
+            <p className="text-sm md:text-base text-stone-500">Керуйте вашим магазином та переглядайте статистику</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
             <div 
               onClick={checkDatabaseHealth}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] md:text-xs font-medium cursor-pointer transition-colors ${
                 dbHealth?.products?.exists ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-red-50 text-red-600 hover:bg-red-100'
               }`}
               title="Натисніть для перевірки стану бази даних"
@@ -1196,91 +1381,100 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
             <button 
               onClick={onLogout}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-auto md:ml-0"
             >
-              <LogOut size={20} /> Вийти
+              <LogOut size={18} /> <span className="hidden sm:inline">Вийти</span>
             </button>
           </div>
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <div className="admin-card flex items-center gap-4">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-              <TrendingUp size={24} />
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 mb-6 md:mb-8">
+          <div className="admin-card flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-4 p-3 sm:p-6">
+            <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+              <TrendingUp size={18} className="sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <p className="text-sm text-stone-500">Всього візитів</p>
-              <p className="text-2xl font-bold">{stats?.totalVisits || 0}</p>
-            </div>
-          </div>
-          <div className="admin-card flex items-center gap-4">
-            <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
-              <Eye size={24} />
-            </div>
-            <div>
-              <p className="text-sm text-stone-500">Переглядів товарів</p>
-              <p className="text-2xl font-bold">{stats?.totalViews || 0}</p>
+            <div className="text-center sm:text-left">
+              <p className="text-[9px] sm:text-sm text-stone-500 uppercase tracking-wider font-bold">Всього візитів</p>
+              <p className="text-lg sm:text-2xl font-black text-stone-900 leading-tight">{stats?.totalVisits || 0}</p>
             </div>
           </div>
-          <div className="admin-card flex items-center gap-4">
-            <div className="p-3 bg-orange-50 text-orange-600 rounded-xl">
-              <Package size={24} />
+          <div className="admin-card flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-4 p-3 sm:p-6">
+            <div className="p-2 sm:p-3 bg-purple-50 text-purple-600 rounded-xl">
+              <Eye size={18} className="sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <p className="text-sm text-stone-500">Всього товарів</p>
-              <p className="text-2xl font-bold">{products.length}</p>
+            <div className="text-center sm:text-left">
+              <p className="text-[9px] sm:text-sm text-stone-500 uppercase tracking-wider font-bold">Переглядів</p>
+              <p className="text-lg sm:text-2xl font-black text-stone-900 leading-tight">{stats?.totalViews || 0}</p>
+            </div>
+          </div>
+          <div className="admin-card flex flex-col sm:flex-row items-center sm:items-start gap-2 sm:gap-4 p-3 sm:p-6 col-span-2 lg:col-span-1">
+            <div className="p-2 sm:p-3 bg-orange-50 text-orange-600 rounded-xl">
+              <Package size={18} className="sm:w-6 sm:h-6" />
+            </div>
+            <div className="text-center sm:text-left">
+              <p className="text-[9px] sm:text-sm text-stone-500 uppercase tracking-wider font-bold">Всього товарів</p>
+              <p className="text-lg sm:text-2xl font-black text-stone-900 leading-tight">{products.length}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 mb-8">
-        <div className="flex gap-4 border-b border-stone-200">
+      <div className="max-w-7xl mx-auto px-4 mb-4 md:mb-8">
+        <div className="flex gap-2 sm:gap-4 border-b border-stone-200 overflow-x-auto no-scrollbar scroll-smooth">
           <button 
             onClick={() => setActiveView('products')}
-            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'products' ? 'text-stone-900' : 'text-stone-400'}`}
+            className={`pb-3 sm:pb-4 px-1 sm:px-2 font-medium transition-all relative whitespace-nowrap shrink-0 ${activeView === 'products' ? 'text-stone-900' : 'text-stone-400'}`}
           >
-            <div className="flex items-center gap-2">
-              <Package size={20} /> Товари
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm md:text-base">
+              <Package size={16} className="sm:w-5 sm:h-5" /> Товари
             </div>
             {activeView === 'products' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
           <button 
             onClick={() => setActiveView('ads')}
-            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'ads' ? 'text-stone-900' : 'text-stone-400'}`}
+            className={`pb-3 sm:pb-4 px-1 sm:px-2 font-medium transition-all relative whitespace-nowrap shrink-0 ${activeView === 'ads' ? 'text-stone-900' : 'text-stone-400'}`}
           >
-            <div className="flex items-center gap-2">
-              <Megaphone size={20} /> Оголошення
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm md:text-base">
+              <Megaphone size={16} className="sm:w-5 sm:h-5" /> Оголошення
             </div>
             {activeView === 'ads' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
           <button 
             onClick={() => setActiveView('reviews')}
-            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'reviews' ? 'text-stone-900' : 'text-stone-400'}`}
+            className={`pb-3 sm:pb-4 px-1 sm:px-2 font-medium transition-all relative whitespace-nowrap shrink-0 ${activeView === 'reviews' ? 'text-stone-900' : 'text-stone-400'}`}
           >
-            <div className="flex items-center gap-2">
-              <MessageSquare size={20} /> Відгуки
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm md:text-base">
+              <MessageSquare size={16} className="sm:w-5 sm:h-5" /> Відгуки
             </div>
             {activeView === 'reviews' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
           <button 
             onClick={() => setActiveView('stats')}
-            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'stats' ? 'text-stone-900' : 'text-stone-400'}`}
+            className={`pb-3 sm:pb-4 px-1 sm:px-2 font-medium transition-all relative whitespace-nowrap shrink-0 ${activeView === 'stats' ? 'text-stone-900' : 'text-stone-400'}`}
           >
-            <div className="flex items-center gap-2">
-              <TrendingUp size={20} /> Статистика
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm md:text-base">
+              <TrendingUp size={16} className="sm:w-5 sm:h-5" /> Статистика
             </div>
             {activeView === 'stats' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
           <button 
             onClick={() => setActiveView('settings')}
-            className={`pb-4 px-2 font-medium transition-all relative ${activeView === 'settings' ? 'text-stone-900' : 'text-stone-400'}`}
+            className={`pb-3 sm:pb-4 px-1 sm:px-2 font-medium transition-all relative whitespace-nowrap shrink-0 ${activeView === 'settings' ? 'text-stone-900' : 'text-stone-400'}`}
           >
-            <div className="flex items-center gap-2">
-              <Settings size={20} /> Налаштування
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm md:text-base">
+              <Settings size={16} className="sm:w-5 sm:h-5" /> Налаштування
             </div>
             {activeView === 'settings' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
+          </button>
+          <button 
+            onClick={() => setActiveView('db-stats')}
+            className={`pb-3 sm:pb-4 px-1 sm:px-2 font-medium transition-all relative whitespace-nowrap shrink-0 ${activeView === 'db-stats' ? 'text-stone-900' : 'text-stone-400'}`}
+          >
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm md:text-base">
+              <Database size={16} className="sm:w-5 sm:h-5" /> База даних
+            </div>
+            {activeView === 'db-stats' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-stone-900" />}
           </button>
         </div>
       </div>
@@ -1290,7 +1484,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Product List */}
             <div className="lg:col-span-2 space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-4">
                   <h2 className="text-xl font-semibold">Товари</h2>
                   <button 
@@ -1308,7 +1502,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     setEditingProduct(null);
                     setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '', radius: '' });
                   }}
-                  className="flex items-center gap-2 bg-stone-900 text-white px-4 py-2 rounded-xl hover:bg-stone-800 transition-colors"
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-stone-900 text-white px-4 py-3 sm:py-2 rounded-xl hover:bg-stone-800 transition-colors font-bold shadow-lg shadow-stone-200"
                 >
                   <Plus size={20} /> Додати товар
                 </button>
@@ -1504,51 +1698,51 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         )}
 
         {activeView === 'ads' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">Оголошення</h2>
+          <div className="space-y-4 md:space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 className="text-lg md:text-xl font-bold">Оголошення</h2>
               <button 
                 onClick={() => setIsAddingAd(true)}
-                className="flex items-center gap-2 bg-stone-900 text-white px-4 py-2 rounded-xl hover:bg-stone-800 transition-colors"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-stone-900 text-white px-4 py-3 sm:py-2 rounded-xl hover:bg-stone-800 transition-all font-bold shadow-lg shadow-stone-200 text-sm md:text-base"
               >
-                <Plus size={20} /> Додати оголошення
+                <Plus size={18} className="md:w-5 md:h-5" /> Додати оголошення
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto no-scrollbar">
               <table className="w-full text-left min-w-[600px]">
-                <thead className="bg-stone-50 border-bottom border-stone-200">
+                <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Заголовок</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Ціна</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Телефон</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Тип</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Заголовок</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Ціна</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Телефон</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Тип</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {ads.length > 0 ? ads.map((ad) => (
                     <tr key={ad.id} className="hover:bg-stone-50 transition-colors">
-                      <td className="px-6 py-4">
+                      <td className="px-4 md:px-6 py-3 md:py-4">
                         <div className="flex items-center gap-3">
                           <img 
                             src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/ad/200/200'} 
-                            className="w-10 h-10 rounded-lg object-cover"
+                            className="w-8 h-8 md:w-10 md:h-10 rounded-lg object-cover"
                             alt=""
                             referrerPolicy="no-referrer"
                           />
-                          <span className="font-medium">{ad.title}</span>
+                          <span className="font-medium text-sm md:text-base">{ad.title}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">{ad.price} грн</td>
-                      <td className="px-6 py-4">{ad.phone}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${ad.is_placeholder ? 'bg-stone-100 text-stone-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                      <td className="px-4 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.price} грн</td>
+                      <td className="px-4 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.phone}</td>
+                      <td className="px-4 md:px-6 py-3 md:py-4">
+                        <span className={`px-2 py-1 rounded-full text-[10px] md:text-xs font-medium ${ad.is_placeholder ? 'bg-stone-100 text-stone-600' : 'bg-emerald-50 text-emerald-600'}`}>
                           {ad.is_placeholder ? 'Заглушка' : 'Активне'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2">
+                      <td className="px-4 md:px-6 py-3 md:py-4 text-right">
+                        <div className="flex justify-end gap-1 md:gap-2">
                           <button 
                             onClick={() => {
                               setEditingAd(ad);
@@ -1563,15 +1757,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               });
                               setIsAddingAd(true);
                             }}
-                            className="p-2 text-stone-400 hover:text-stone-900 transition-colors"
+                            className="p-1.5 md:p-2 text-stone-400 hover:text-stone-900 transition-colors"
                           >
-                            <Edit size={18} />
+                            <Edit size={16} className="md:w-[18px] md:h-[18px]" />
                           </button>
                           <button 
                             onClick={() => handleDeleteAd(ad.id)}
-                            className="p-2 text-stone-400 hover:text-red-600 transition-colors"
+                            className="p-1.5 md:p-2 text-stone-400 hover:text-red-600 transition-colors"
                           >
-                            <Trash2 size={18} />
+                            <Trash2 size={16} className="md:w-[18px] md:h-[18px]" />
                           </button>
                         </div>
                       </td>
@@ -1580,7 +1774,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     <tr>
                       <td colSpan={5} className="px-6 py-12 text-center text-stone-400">
                         <Megaphone className="mx-auto mb-2 opacity-20" size={32} />
-                        <p>Оголошень поки немає</p>
+                        <p className="text-sm md:text-base">Оголошень поки немає</p>
                       </td>
                     </tr>
                   )}
@@ -1591,55 +1785,55 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         )}
 
         {activeView === 'reviews' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">Відгуки клієнтів</h2>
+          <div className="space-y-4 md:space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 className="text-lg md:text-xl font-bold">Відгуки клієнтів</h2>
               <button 
                 onClick={handleSeedReviews}
                 disabled={isSubmitting}
-                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-purple-600 text-white px-4 py-3 sm:py-2 rounded-xl hover:bg-purple-700 transition-all font-bold shadow-lg shadow-purple-100 disabled:opacity-50 text-sm md:text-base"
               >
-                <TrendingUp size={20} className={isSubmitting ? 'animate-spin' : ''} /> 
+                <TrendingUp size={18} className={`md:w-5 md:h-5 ${isSubmitting ? 'animate-spin' : ''}`} /> 
                 {isSubmitting ? 'Генерую...' : 'Згенерувати 50 відгуків'}
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto no-scrollbar">
               <table className="w-full text-left min-w-[600px]">
-                <thead className="bg-stone-50 border-bottom border-stone-200">
+                <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Клієнт</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Рейтинг</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Коментар</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500">Дата</th>
-                    <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Клієнт</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Рейтинг</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Коментар</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Дата</th>
+                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {reviews.length > 0 ? reviews.map((review) => (
                     <tr key={review.id} className="hover:bg-stone-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <span className="font-medium">{review.user_name}</span>
+                      <td className="px-4 md:px-6 py-3 md:py-4">
+                        <span className="font-medium text-sm md:text-base">{review.user_name}</span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 md:px-6 py-3 md:py-4">
                         <div className="flex gap-0.5 text-amber-400">
                           {[...Array(5)].map((_, i) => (
-                            <Star key={i} size={14} fill={i < review.rating ? "currentColor" : "none"} />
+                            <Star key={i} size={12} className="md:w-[14px] md:h-[14px]" fill={i < review.rating ? "currentColor" : "none"} />
                           ))}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <p className="text-sm text-stone-600 line-clamp-2 max-w-md">{review.comment}</p>
+                      <td className="px-4 md:px-6 py-3 md:py-4">
+                        <p className="text-xs md:text-sm text-stone-600 line-clamp-2 max-w-md">{review.comment}</p>
                       </td>
-                      <td className="px-6 py-4 text-sm text-stone-500">
+                      <td className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm text-stone-500">
                         {new Date(review.created_at).toLocaleDateString('uk-UA')}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 md:px-6 py-3 md:py-4 text-right">
                         <button 
                           onClick={() => handleDeleteReview(review.id)}
-                          className="p-2 text-stone-400 hover:text-red-600 transition-colors"
+                          className="p-1.5 md:p-2 text-stone-400 hover:text-red-600 transition-colors"
                         >
-                          <Trash2 size={18} />
+                          <Trash2 size={16} className="md:w-[18px] md:h-[18px]" />
                         </button>
                       </td>
                     </tr>
@@ -1647,7 +1841,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     <tr>
                       <td colSpan={5} className="px-6 py-12 text-center text-stone-400">
                         <MessageSquare className="mx-auto mb-2 opacity-20" size={32} />
-                        <p>Відгуків поки немає</p>
+                        <p className="text-sm md:text-base">Відгуків поки немає</p>
                       </td>
                     </tr>
                   )}
@@ -1658,78 +1852,81 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         )}
 
         {activeView === 'stats' && (
-          <div className="space-y-8">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold">Статистика магазину</h2>
-              <div className="flex items-center gap-4">
+          <div className="space-y-6 md:space-y-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h2 className="text-xl font-bold">Статистика магазину</h2>
+              <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full sm:w-auto">
+                <button 
+                  onClick={() => fetchUsageStats()}
+                  disabled={isRefreshingStats}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-lg shadow-stone-200 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={isRefreshingStats ? 'animate-spin' : ''} /> Оновити
+                </button>
                 <button 
                   onClick={() => exportToCSV(products, 'products_export')}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-medium hover:bg-stone-50 transition-colors"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-white border border-stone-200 rounded-xl text-xs font-medium hover:bg-stone-50 transition-colors"
                 >
-                  <TrendingUp size={14} /> Експорт товарів
+                  <TrendingUp size={14} /> Експорт
                 </button>
-                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${supabase ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${supabase ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                  {supabase ? 'Supabase: Підключено' : 'Supabase: Помилка'}
-                </div>
                 <button 
                   onClick={handleResetStats}
                   disabled={isRefreshingStats}
-                  className={`p-2 transition-colors bg-white rounded-xl border border-stone-200 ${isRefreshingStats ? 'text-stone-300 cursor-not-allowed' : 'text-stone-400 hover:text-red-600'}`}
+                  className={`p-2.5 sm:p-2 transition-colors bg-white rounded-xl border border-stone-200 ${isRefreshingStats ? 'text-stone-300 cursor-not-allowed' : 'text-stone-400 hover:text-red-600'}`}
                   title="Обнулити статистику"
                 >
-                  <RefreshCw size={20} className={isRefreshingStats ? 'animate-spin' : ''} />
+                  <RefreshCw size={18} className={isRefreshingStats ? 'animate-spin' : ''} />
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
-                    <TrendingUp size={24} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+              <div className="admin-card bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-4 mb-2 md:mb-4">
+                  <div className="p-2.5 md:p-3 bg-emerald-50 text-emerald-600 rounded-xl md:rounded-2xl">
+                    <TrendingUp size={20} className="md:w-6 md:h-6" />
                   </div>
                   <div>
-                    <p className="text-sm text-stone-500">Всього візитів</p>
-                    <p className="text-3xl font-bold">{stats?.totalVisits || 0}</p>
+                    <p className="text-xs md:text-sm text-stone-500">Всього візитів</p>
+                    <p className="text-2xl md:text-3xl font-bold">{stats?.totalVisits || 0}</p>
                   </div>
                 </div>
-                <p className="text-xs text-stone-400">За весь час роботи магазину</p>
+                <p className="text-[10px] md:text-xs text-stone-400">За весь час роботи магазину</p>
               </div>
 
-              <div className="admin-card bg-white p-6 rounded-3xl border border-stone-100 shadow-sm">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
-                    <Eye size={24} />
+              <div className="admin-card bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-4 mb-2 md:mb-4">
+                  <div className="p-2.5 md:p-3 bg-purple-50 text-purple-600 rounded-xl md:rounded-2xl">
+                    <Eye size={20} className="md:w-6 md:h-6" />
                   </div>
                   <div>
-                    <p className="text-sm text-stone-500">Переглядів товарів</p>
-                    <p className="text-3xl font-bold">{stats?.totalViews || 0}</p>
+                    <p className="text-xs md:text-sm text-stone-500">Переглядів товарів</p>
+                    <p className="text-2xl md:text-3xl font-bold">{stats?.totalViews || 0}</p>
                   </div>
                 </div>
-                <p className="text-xs text-stone-400">Сумарна кількість переглядів усіх товарів</p>
+                <p className="text-[10px] md:text-xs text-stone-400">Сумарна кількість переглядів усіх товарів</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
-                <h3 className="text-xl font-bold mb-8">Популярність товарів</h3>
-                <div className="h-[300px] w-full" style={{ minHeight: '300px' }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+              <div className="admin-card bg-white p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-lg md:text-xl font-bold mb-6 md:mb-8">Популярність товарів</h3>
+                <div className="h-[250px] md:h-[300px] w-full" style={{ minHeight: '250px' }}>
                   {isChartVisible && stats?.mostViewed && stats.mostViewed.length > 0 && (
-                    <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                    <ResponsiveContainer width="100%" height="100%" minHeight={250}>
                       <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
                         <XAxis 
                           dataKey="name" 
                           axisLine={false} 
                           tickLine={false} 
-                          tick={{ fontSize: 12, fill: '#888' }}
+                          tick={{ fontSize: 10, fill: '#888' }}
                           hide
                         />
                         <YAxis 
                           axisLine={false} 
                           tickLine={false} 
-                          tick={{ fontSize: 12, fill: '#888' }}
+                          tick={{ fontSize: 10, fill: '#888' }}
                         />
                         <Tooltip 
                           cursor={{ fill: '#f9f9f9' }}
@@ -1737,17 +1934,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                             if (active && payload && payload.length) {
                               const data = payload[0].payload;
                               return (
-                                <div className="bg-white p-3 rounded-xl shadow-xl border border-stone-100">
-                                  <p className="font-bold text-stone-900">{data.name}</p>
-                                  <p className="text-xs text-stone-500 font-mono mb-1">Код: {data.sku}</p>
-                                  <p className="text-sm text-purple-600 font-semibold">{data.views} переглядів</p>
+                                <div className="bg-white p-2 md:p-3 rounded-xl shadow-xl border border-stone-100">
+                                  <p className="font-bold text-xs md:text-sm text-stone-900">{data.name}</p>
+                                  <p className="text-[10px] text-stone-500 font-mono mb-1">Код: {data.sku}</p>
+                                  <p className="text-xs md:text-sm text-purple-600 font-semibold">{data.views} переглядів</p>
                                 </div>
                               );
                             }
                             return null;
                           }}
                         />
-                        <Bar dataKey="views" radius={[4, 4, 4, 4]} barSize={32}>
+                        <Bar dataKey="views" radius={[4, 4, 4, 4]} barSize={24}>
                           {(stats?.mostViewed || []).map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={index === 0 ? '#1c1917' : '#d6d3d1'} />
                           ))}
@@ -1756,12 +1953,12 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     </ResponsiveContainer>
                   )}
                 </div>
-                <div className="mt-6 space-y-3">
+                <div className="mt-4 md:mt-6 space-y-2 md:space-y-3">
                   {stats?.mostViewed?.slice(0, 3).map((item, idx) => (
-                    <div key={item.id} className="flex items-center justify-between text-sm">
+                    <div key={item.id} className="flex items-center justify-between text-xs md:text-sm">
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-stone-900' : 'bg-stone-300'}`} />
-                        <span className="text-stone-600 truncate max-w-[150px]">{item.name} <span className="text-[10px] text-stone-400 font-mono">({item.sku})</span></span>
+                        <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${idx === 0 ? 'bg-stone-900' : 'bg-stone-300'}`} />
+                        <span className="text-stone-600 truncate max-w-[120px] md:max-w-[150px]">{item.name} <span className="text-[9px] md:text-[10px] text-stone-400 font-mono">({item.sku})</span></span>
                       </div>
                       <span className="font-mono font-medium">{item.views}</span>
                     </div>
@@ -1769,9 +1966,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
               </div>
 
-              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
-                <h3 className="text-xl font-bold mb-8">Переходи по сайту</h3>
-                <div className="space-y-4">
+              <div className="admin-card bg-white p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-lg md:text-xl font-bold mb-6 md:mb-8">Переходи по сайту</h3>
+                <div className="space-y-3 md:space-y-4">
                   {[
                     { id: 'catalog', name: 'Каталог', icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
                     { id: 'reviews', name: 'Відгуки', icon: MessageSquare, color: 'text-emerald-600', bg: 'bg-emerald-50' },
@@ -1782,16 +1979,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   ].map((item) => {
                     const count = (stats?.clicks?.[item.id] || 0) + (stats?.clicks?.[`${item.id}_mobile`] || 0);
                     return (
-                      <div key={item.id} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 ${item.bg} ${item.color} rounded-lg`}>
-                            <item.icon size={18} />
+                      <div key={item.id} className="flex items-center justify-between p-3 md:p-4 bg-stone-50 rounded-xl md:rounded-2xl border border-stone-100">
+                        <div className="flex items-center gap-2 md:gap-3">
+                          <div className={`p-1.5 md:p-2 ${item.bg} ${item.color} rounded-lg`}>
+                            <item.icon size={16} className="md:w-[18px] md:h-[18px]" />
                           </div>
-                          <span className="font-medium text-stone-700">{item.name}</span>
+                          <span className="font-medium text-xs md:text-sm text-stone-700">{item.name}</span>
                         </div>
                         <div className="flex flex-col items-end">
-                          <span className="text-lg font-bold text-stone-900">{count}</span>
-                          <span className="text-[10px] text-stone-400 uppercase tracking-wider">кліків</span>
+                          <span className="text-base md:text-lg font-bold text-stone-900">{count}</span>
+                          <span className="text-[8px] md:text-[10px] text-stone-400 uppercase tracking-wider">кліків</span>
                         </div>
                       </div>
                     );
@@ -1799,9 +1996,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
               </div>
 
-              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
-                <h3 className="text-xl font-bold mb-8">Статистика контактів</h3>
-                <div className="space-y-4">
+              <div className="admin-card bg-white p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-lg md:text-xl font-bold mb-6 md:mb-8">Статистика контактів</h3>
+                <div className="space-y-3 md:space-y-4">
                   {[
                     { id: 'contact_telegram', name: 'Telegram (Товари)', icon: Send, color: 'text-[#229ED9]', bg: 'bg-blue-50' },
                     { id: 'contact_whatsapp', name: 'WhatsApp (Товари)', icon: MessageCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
@@ -1811,16 +2008,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   ].map((item) => {
                     const count = stats?.clicks?.[item.id] || 0;
                     return (
-                      <div key={item.id} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 ${item.bg} ${item.color} rounded-lg`}>
-                            <item.icon size={18} />
+                      <div key={item.id} className="flex items-center justify-between p-3 md:p-4 bg-stone-50 rounded-xl md:rounded-2xl border border-stone-100">
+                        <div className="flex items-center gap-2 md:gap-3">
+                          <div className={`p-1.5 md:p-2 ${item.bg} ${item.color} rounded-lg`}>
+                            <item.icon size={16} className="md:w-[18px] md:h-[18px]" />
                           </div>
-                          <span className="font-medium text-stone-700">{item.name}</span>
+                          <span className="font-medium text-xs md:text-sm text-stone-700">{item.name}</span>
                         </div>
                         <div className="flex flex-col items-end">
-                          <span className="text-lg font-bold text-stone-900">{count}</span>
-                          <span className="text-[10px] text-stone-400 uppercase tracking-wider">запитів</span>
+                          <span className="text-base md:text-lg font-bold text-stone-900">{count}</span>
+                          <span className="text-[8px] md:text-[10px] text-stone-400 uppercase tracking-wider">запитів</span>
                         </div>
                       </div>
                     );
@@ -1828,38 +2025,38 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 </div>
               </div>
 
-              <div className="admin-card bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm">
-                <h3 className="text-xl font-bold mb-8">Швидкий огляд</h3>
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
-                    <p className="text-sm text-stone-500 mb-1">Товарів</p>
-                    <p className="text-2xl font-bold text-stone-900">{products.length}</p>
+              <div className="admin-card bg-white p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-stone-100 shadow-sm">
+                <h3 className="text-lg md:text-xl font-bold mb-6 md:mb-8">Швидкий огляд</h3>
+                <div className="grid grid-cols-2 gap-3 md:gap-4 mb-6 md:mb-8">
+                  <div className="p-4 md:p-6 bg-stone-50 rounded-2xl md:rounded-3xl border border-stone-100">
+                    <p className="text-[10px] md:text-sm text-stone-500 mb-1">Товарів</p>
+                    <p className="text-xl md:text-2xl font-bold text-stone-900">{products.length}</p>
                   </div>
-                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
-                    <p className="text-sm text-stone-500 mb-1">Оголошень</p>
-                    <p className="text-2xl font-bold text-stone-900">{ads.length}</p>
+                  <div className="p-4 md:p-6 bg-stone-50 rounded-2xl md:rounded-3xl border border-stone-100">
+                    <p className="text-[10px] md:text-sm text-stone-500 mb-1">Оголошень</p>
+                    <p className="text-xl md:text-2xl font-bold text-stone-900">{ads.length}</p>
                   </div>
-                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
-                    <p className="text-sm text-stone-500 mb-1">Відгуків</p>
-                    <p className="text-2xl font-bold text-stone-900">{reviews.length}</p>
+                  <div className="p-4 md:p-6 bg-stone-50 rounded-2xl md:rounded-3xl border border-stone-100">
+                    <p className="text-[10px] md:text-sm text-stone-500 mb-1">Відгуків</p>
+                    <p className="text-xl md:text-2xl font-bold text-stone-900">{reviews.length}</p>
                   </div>
-                  <div className="p-6 bg-stone-50 rounded-3xl border border-stone-100">
-                    <p className="text-sm text-stone-500 mb-1">Знижки</p>
-                    <p className="text-2xl font-bold text-red-600">{products.filter(p => p.is_sale).length}</p>
+                  <div className="p-4 md:p-6 bg-stone-50 rounded-2xl md:rounded-3xl border border-stone-100">
+                    <p className="text-[10px] md:text-sm text-stone-500 mb-1">Знижки</p>
+                    <p className="text-xl md:text-2xl font-bold text-red-600">{products.filter(p => p.is_sale).length}</p>
                   </div>
                 </div>
 
-                <div className="pt-8 border-t border-stone-100">
-                  <h4 className="font-bold mb-4">Інструменти обслуговування</h4>
+                <div className="pt-6 md:pt-8 border-t border-stone-100">
+                  <h4 className="text-sm md:text-base font-bold mb-4">Інструменти обслуговування</h4>
                   <button 
                     onClick={optimizeDatabase}
                     disabled={isOptimizing}
-                    className="w-full flex items-center justify-center gap-2 bg-stone-100 text-stone-900 py-4 rounded-2xl font-bold hover:bg-stone-200 transition-all disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 bg-stone-100 text-stone-900 py-3 md:py-4 rounded-xl md:rounded-2xl font-bold hover:bg-stone-200 transition-all disabled:opacity-50 text-xs md:text-sm"
                   >
-                    <TrendingUp size={20} className={isOptimizing ? 'animate-pulse' : ''} />
+                    <TrendingUp size={18} className={`md:w-5 md:h-5 ${isOptimizing ? 'animate-pulse' : ''}`} />
                     {isOptimizing ? `Оптимізація... ${optimizationProgress}%` : 'Оптимізувати базу (Стиснути фото)'}
                   </button>
-                  <p className="text-[10px] text-stone-400 mt-2 text-center">
+                  <p className="text-[9px] md:text-[10px] text-stone-400 mt-2 text-center">
                     Це стисне всі існуючі фото в базі даних для пришвидшення завантаження сайту.
                   </p>
                 </div>
@@ -1869,22 +2066,22 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         )}
 
         {activeView === 'settings' && (
-          <div className="max-w-4xl mx-auto space-y-8">
-            <h2 className="text-2xl font-bold">Налаштування сайту</h2>
+          <div className="max-w-4xl mx-auto space-y-6 md:space-y-8">
+            <h2 className="text-xl md:text-2xl font-bold">Налаштування сайту</h2>
             
-            <div className="bg-white p-8 rounded-[2.5rem] border border-stone-100 shadow-sm space-y-8">
+            <div className="bg-white p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-stone-100 shadow-sm space-y-6 md:space-y-8">
               {/* Maintenance Mode */}
-              <div className="flex items-center justify-between p-6 bg-stone-50 rounded-3xl border border-stone-100">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 md:p-6 bg-stone-50 rounded-2xl md:rounded-3xl border border-stone-100 gap-4">
                 <div className="space-y-1">
-                  <h3 className="font-bold flex items-center gap-2">
-                    <ShieldCheck size={20} className="text-amber-600" /> Режим обслуговування
+                  <h3 className="font-bold flex items-center gap-2 text-sm md:text-base">
+                    <ShieldCheck size={18} className="text-amber-600 md:w-5 md:h-5" /> Режим обслуговування
                   </h3>
-                  <p className="text-sm text-stone-500">Коли увімкнено, звичайні користувачі бачитимуть сторінку "Технічні роботи".</p>
+                  <p className="text-xs md:text-sm text-stone-500">Коли увімкнено, звичайні користувачі бачитимуть сторінку "Технічні роботи".</p>
                 </div>
                 <button 
                   onClick={() => handleSaveSettings({ maintenance_mode: !siteSettings?.maintenance_mode })}
                   aria-label={siteSettings?.maintenance_mode ? 'Вимкнути режим обслуговування' : 'Увімкнути режим обслуговування'}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${siteSettings?.maintenance_mode ? 'bg-amber-600' : 'bg-stone-200'}`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none shrink-0 ${siteSettings?.maintenance_mode ? 'bg-amber-600' : 'bg-stone-200'}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${siteSettings?.maintenance_mode ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
@@ -1894,14 +2091,14 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
               {/* Banner Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                  <Megaphone size={20} className="text-purple-600" /> Рекламний банер
+                <h3 className="text-base md:text-lg font-bold flex items-center gap-2">
+                  <Megaphone size={18} className="text-purple-600 md:w-5 md:h-5" /> Рекламний банер
                 </h3>
-                <p className="text-sm text-stone-500">Цей банер буде відображатися у верхній частині розділу "Оголошення". Якщо фото не завантажене, банер не буде видно.</p>
-                <div className="space-y-2">
-                  <label htmlFor="banner-upload" className="text-sm font-medium text-stone-700">Фото банера</label>
-                  <div className="flex gap-4 items-start">
-                    <div className="flex-1 space-y-4">
+                <p className="text-xs md:text-sm text-stone-500">Цей банер буде відображатися у верхній частині розділу "Оголошення". Якщо фото не завантажене, банер не буде видно.</p>
+                <div className="space-y-3">
+                  <label htmlFor="banner-upload" className="text-xs md:text-sm font-medium text-stone-700">Фото банера</label>
+                  <div className="flex flex-col sm:flex-row gap-4 items-start">
+                    <div className="flex-1 w-full space-y-4">
                       <input 
                         type="file"
                         id="banner-upload"
@@ -1921,6 +2118,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               
                               const compressed = await compressImage(base64, 1200, 400, 0.8);
                               const blob = dataURLtoBlob(compressed);
+
+                              // Перевірка ліміту сховища
+                              const canUpload = await checkStorageLimit(blob.size);
+                              if (!canUpload) return;
 
                               const fileName = `banner-${Date.now()}.jpg`;
                               const filePath = `settings/${fileName}`;
@@ -1945,17 +2146,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         }}
                         className="hidden"
                       />
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <button 
                           onClick={() => document.getElementById('banner-upload')?.click()}
-                          className="bg-stone-100 text-stone-900 px-4 py-2 rounded-xl font-medium hover:bg-stone-200 transition-all flex items-center gap-2"
+                          className="bg-stone-100 text-stone-900 px-4 py-2 rounded-xl font-medium hover:bg-stone-200 transition-all flex items-center gap-2 text-xs md:text-sm"
                         >
-                          <ImageIcon size={18} /> Завантажити фото
+                          <ImageIcon size={16} className="md:w-[18px] md:h-[18px]" /> Завантажити фото
                         </button>
                         {siteSettings?.banner_url && (
                           <button 
                             onClick={() => handleSaveSettings({ banner_url: '' })}
-                            className="text-red-600 px-4 py-2 rounded-xl font-medium hover:bg-red-50 transition-all"
+                            className="text-red-600 px-4 py-2 rounded-xl font-medium hover:bg-red-50 transition-all text-xs md:text-sm"
                           >
                             Видалити банер
                           </button>
@@ -1963,7 +2164,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       </div>
                     </div>
                     {siteSettings?.banner_url && (
-                      <div className="w-48 aspect-[3/1] rounded-xl overflow-hidden border border-stone-200">
+                      <div className="w-full sm:w-48 aspect-[3/1] rounded-xl overflow-hidden border border-stone-200 shrink-0">
                         <img src={siteSettings.banner_url} className="w-full h-full object-cover" alt="Прев'ю банера" referrerPolicy="no-referrer" />
                       </div>
                     )}
@@ -1975,21 +2176,21 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
               {/* Database Health Check */}
               <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-bold flex items-center gap-2">
-                    <ShieldCheck size={20} className="text-emerald-600" /> Стан бази даних Supabase
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h3 className="text-base md:text-lg font-bold flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-emerald-600 md:w-5 md:h-5" /> Стан бази даних Supabase
                   </h3>
                   <button 
                     onClick={checkDatabaseHealth}
                     disabled={isCheckingHealth}
-                    className="text-xs font-bold text-stone-500 hover:text-stone-900 flex items-center gap-1"
+                    className="text-[10px] md:text-xs font-bold text-stone-500 hover:text-stone-900 flex items-center gap-1"
                   >
-                    <RefreshCw size={14} className={isCheckingHealth ? 'animate-spin' : ''} /> Оновити статус
+                    <RefreshCw size={12} className={`md:w-[14px] md:h-[14px] ${isCheckingHealth ? 'animate-spin' : ''}`} /> Оновити статус
                   </button>
                 </div>
 
                 {dbHealth ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                     {Object.entries(dbHealth).map(([table, status]: [string, any]) => {
                       const requiredColumns: { [key: string]: string[] } = {
                         products: ['id', 'name', 'description', 'price', 'images', 'sku', 'radius', 'is_sale', 'old_price'],
@@ -2003,32 +2204,32 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       const isHealthy = status.exists && missingColumns.length === 0;
 
                       return (
-                        <div key={table} className={`p-4 rounded-2xl border ${isHealthy ? 'border-emerald-100 bg-emerald-50/30' : 'border-red-100 bg-red-50/30'}`}>
+                        <div key={table} className={`p-3 md:p-4 rounded-xl md:rounded-2xl border ${isHealthy ? 'border-emerald-100 bg-emerald-50/30' : 'border-red-100 bg-red-50/30'}`}>
                           <div className="flex justify-between items-start mb-2">
-                            <span className="font-bold text-sm capitalize">{table}</span>
-                            <div className={`w-2 h-2 rounded-full ${isHealthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                            <span className="font-bold text-xs md:text-sm capitalize">{table}</span>
+                            <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${isHealthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
                           </div>
                           {!status.exists ? (
-                            <p className="text-[10px] text-red-600 font-medium">Таблиця відсутня</p>
+                            <p className="text-[9px] md:text-[10px] text-red-600 font-medium">Таблиця відсутня</p>
                           ) : missingColumns.length > 0 ? (
                             <div className="space-y-1">
-                              <p className="text-[10px] text-red-600 font-medium">Відсутні колонки:</p>
+                              <p className="text-[9px] md:text-[10px] text-red-600 font-medium">Відсутні колонки:</p>
                               <div className="flex flex-wrap gap-1">
                                 {missingColumns.map(col => (
-                                  <span key={col} className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-mono">{col}</span>
+                                  <span key={col} className="text-[8px] md:text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-mono">{col}</span>
                                 ))}
                               </div>
                             </div>
                           ) : (
-                            <p className="text-[10px] text-emerald-600 font-medium">Все в порядку</p>
+                            <p className="text-[9px] md:text-[10px] text-emerald-600 font-medium">Все в порядку</p>
                           )}
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="p-8 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-200">
-                    <p className="text-stone-400 text-sm">Натисніть "Оновити статус" для перевірки бази даних</p>
+                  <div className="p-6 md:p-8 text-center bg-stone-50 rounded-xl md:rounded-2xl border border-dashed border-stone-200">
+                    <p className="text-stone-400 text-xs md:text-sm">Натисніть "Оновити статус" для перевірки бази даних</p>
                   </div>
                 )}
 
@@ -2275,6 +2476,10 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                               const compressed = await compressImage(base64, 1920, 1080, 0.8);
                               const blob = dataURLtoBlob(compressed);
 
+                              // Перевірка ліміту сховища
+                              const canUpload = await checkStorageLimit(blob.size);
+                              if (!canUpload) return;
+
                               const fileName = `catalog-header-${Date.now()}.jpg`;
                               const filePath = `settings/${fileName}`;
 
@@ -2336,6 +2541,10 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                               const compressed = await compressImage(base64, 1920, 1080, 0.8);
                               const blob = dataURLtoBlob(compressed);
 
+                              // Перевірка ліміту сховища
+                              const canUpload = await checkStorageLimit(blob.size);
+                              if (!canUpload) return;
+
                               const fileName = `ads-header-${Date.now()}.jpg`;
                               const filePath = `settings/${fileName}`;
 
@@ -2363,6 +2572,172 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeView === 'db-stats' && (
+          <div className="space-y-6 md:space-y-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-xl md:text-2xl font-bold text-stone-900">Статистика бази даних</h2>
+                <p className="text-xs md:text-sm text-stone-500">Детальна інформація про використання ресурсів Supabase</p>
+              </div>
+              <div className="flex items-center gap-3 md:gap-4 w-full sm:w-auto">
+                {usageStats?.lastUpdated && (
+                  <div className="text-right hidden sm:block">
+                    <p className="text-[8px] md:text-[10px] uppercase tracking-wider text-stone-400 font-bold">Останнє оновлення</p>
+                    <p className="text-[10px] md:text-xs text-stone-600 font-medium">
+                      {usageStats.lastUpdated.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </p>
+                  </div>
+                )}
+                <button 
+                  onClick={() => fetchUsageStats()}
+                  disabled={isFetchingUsage}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-stone-900 text-white px-4 md:px-5 py-2.5 md:py-3 rounded-xl hover:bg-stone-800 transition-all disabled:opacity-50 shadow-lg shadow-stone-200 active:scale-95 text-sm md:text-base font-bold"
+                >
+                  <RefreshCw size={18} className={`md:w-5 md:h-5 ${isFetchingUsage ? 'animate-spin' : ''}`} />
+                  <span>{isFetchingUsage ? 'Оновлення...' : 'Оновити дані'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              {/* Storage Limit Toggle */}
+              <div className="bg-white p-5 md:p-6 rounded-2xl md:rounded-3xl shadow-sm border border-stone-100">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${siteSettings?.storage_limit_enabled ? 'bg-red-50 text-red-600' : 'bg-stone-50 text-stone-600'}`}>
+                      <ShieldCheck size={20} className="md:w-6 md:h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base md:text-lg">Обмеження сховища</h3>
+                      <p className="text-[10px] md:text-xs text-stone-500">Забороняти завантаження при перевищенні ліміту</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleSaveSettings({ storage_limit_enabled: !siteSettings?.storage_limit_enabled })}
+                    className={`w-10 h-5 md:w-12 md:h-6 rounded-full transition-colors relative shrink-0 ${siteSettings?.storage_limit_enabled ? 'bg-red-500' : 'bg-stone-200'}`}
+                  >
+                    <div className={`absolute top-0.5 md:top-1 w-4 h-4 bg-white rounded-full transition-all ${siteSettings?.storage_limit_enabled ? 'left-5.5 md:left-7' : 'left-0.5 md:left-1'}`} />
+                  </button>
+                </div>
+                {siteSettings?.storage_limit_enabled && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] md:text-xs font-medium text-stone-500 uppercase">Ліміт (GB)</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        value={siteSettings.storage_limit_gb || 3.5}
+                        onChange={(e) => handleSaveSettings({ storage_limit_gb: parseFloat(e.target.value) })}
+                        className="flex-1 px-3 py-1.5 md:px-4 md:py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-sm md:text-base"
+                      />
+                      <div className="px-3 py-1.5 md:px-4 md:py-2 bg-stone-50 rounded-xl border border-stone-200 text-stone-500 font-medium text-sm md:text-base">
+                        GB
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Storage Stats */}
+              <div className="bg-white p-5 md:p-6 rounded-2xl md:rounded-3xl shadow-sm border border-stone-100">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                    <ImageIcon size={20} className="md:w-6 md:h-6" />
+                  </div>
+                  <h3 className="font-bold text-base md:text-lg">Сховище (Storage)</h3>
+                </div>
+                <div className="space-y-3 md:space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs md:text-sm text-stone-500">Бакет</span>
+                    <span className="font-mono text-[10px] md:text-sm">{usageStats?.storage.bucket || 'product-images'}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-stone-500">Кількість файлів</span>
+                    <span className="font-bold">{usageStats?.storage.fileCount || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-stone-500">Загальний об'єм</span>
+                    <span className="font-bold text-blue-600">{usageStats ? formatBytes(usageStats.storage.totalSize) : '0 Bytes'}</span>
+                  </div>
+                  <div className="pt-4 border-t border-stone-50">
+                    <p className="text-xs text-stone-400 italic">
+                      * Враховуються файли в папках products/, ads/ та settings/
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Table Stats */}
+              {usageStats?.tables.map((table) => (
+                <div key={table.name} className="bg-white p-6 rounded-3xl shadow-sm border border-stone-100">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-stone-50 text-stone-600 rounded-lg">
+                      <Database size={24} />
+                    </div>
+                    <h3 className="font-bold text-lg capitalize">{table.name.replace('_', ' ')}</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-stone-500">Кількість рядків</span>
+                      <span className="font-bold text-xl">{table.count}</span>
+                    </div>
+                    <div className="pt-4 border-t border-stone-50">
+                      <div className="w-full bg-stone-100 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-stone-900 h-full transition-all duration-1000" 
+                          style={{ width: `${Math.min(100, (table.count / 1000) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-stone-400 mt-1 uppercase tracking-wider">
+                        Навантаження на таблицю
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {usageStats?.lastUpdated && (
+              <div className="mt-8 p-4 bg-stone-100 rounded-2xl border border-stone-200">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-stone-200 text-stone-600 rounded-lg shrink-0">
+                    <Database size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-stone-900 mb-1">Потрібна допомога з базою даних?</h4>
+                    <p className="text-xs text-stone-500 leading-relaxed mb-3">
+                      Якщо ви бачите помилки про відсутні колонки (наприклад, storage_limit_enabled), виконайте цей SQL запит у Supabase SQL Editor:
+                    </p>
+                    <div className="bg-stone-900 rounded-xl p-3 relative group">
+                      <code className="text-[10px] text-stone-300 font-mono break-all block pr-8">
+                        ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS storage_limit_enabled BOOLEAN DEFAULT false;
+                        ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS storage_limit_gb FLOAT8 DEFAULT 3.5;
+                      </code>
+                      <button 
+                        onClick={() => {
+                          const sql = "ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS storage_limit_enabled BOOLEAN DEFAULT false; ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS storage_limit_gb FLOAT8 DEFAULT 3.5;";
+                          navigator.clipboard.writeText(sql);
+                          showNotification('SQL скопійовано');
+                        }}
+                        className="absolute right-2 top-2 p-1.5 text-stone-400 hover:text-white transition-colors"
+                        title="Копіювати SQL"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {usageStats?.lastUpdated && (
+              <div className="text-center text-stone-400 text-sm mt-4">
+                Останнє оновлення: {usageStats.lastUpdated.toLocaleTimeString()}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2393,7 +2768,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
               <form onSubmit={handleAdSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 <div className="space-y-2">
-                  <label htmlFor="ad_title" className="text-sm font-medium text-stone-700">Заголовок</label>
+                  <label htmlFor="ad_title" className="text-xs sm:text-sm font-bold text-stone-700 uppercase tracking-wider">Заголовок</label>
                   <input 
                     required
                     id="ad_title"
@@ -2402,11 +2777,11 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     autoComplete="off"
                     value={adFormData.title}
                     onChange={e => setAdFormData({ ...adFormData, title: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-sm sm:text-base"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="ad_price" className="text-sm font-medium text-stone-700">Ціна (грн)</label>
+                  <label htmlFor="ad_price" className="text-xs sm:text-sm font-bold text-stone-700 uppercase tracking-wider">Ціна (грн)</label>
                   <input 
                     required
                     id="ad_price"
@@ -2415,7 +2790,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     autoComplete="off"
                     value={adFormData.price}
                     onChange={e => setAdFormData({ ...adFormData, price: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-sm sm:text-base"
                   />
                 </div>
                 </div>
@@ -2512,7 +2887,15 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                           </button>
                           <button 
                             type="button"
-                            onClick={() => setAdFormData({ ...adFormData, images: adFormData.images.filter((_, i) => i !== idx) })}
+                            onClick={() => {
+                              const removedUrl = adFormData.images[idx];
+                              // Видаляємо тільки якщо це нове фото (не було в базі)
+                              const isNewImage = !editingAd || !editingAd.images.includes(removedUrl);
+                              if (isNewImage && removedUrl) {
+                                deleteStorageFiles([removedUrl]);
+                              }
+                              setAdFormData({ ...adFormData, images: adFormData.images.filter((_, i) => i !== idx) });
+                            }}
                             className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-white"
                           >
                             <X size={14} />
@@ -2570,7 +2953,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
               <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div className="space-y-2">
-                    <label htmlFor="product_name" className="text-sm font-medium text-stone-700">Назва товару</label>
+                    <label htmlFor="product_name" className="text-xs sm:text-sm font-bold text-stone-700 uppercase tracking-wider">Назва товару</label>
                     <input 
                       required
                       id="product_name"
@@ -2579,12 +2962,12 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       autoComplete="off"
                       value={formData.name}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                      className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-sm sm:text-base"
                       placeholder="Наприклад: Автомобільні килимки"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="product_price" className="text-sm font-medium text-stone-700">Ціна (грн)</label>
+                    <label htmlFor="product_price" className="text-xs sm:text-sm font-bold text-stone-700 uppercase tracking-wider">Ціна (грн)</label>
                     <input 
                       required
                       id="product_price"
@@ -2593,7 +2976,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       autoComplete="off"
                       value={formData.price}
                       onChange={e => setFormData({ ...formData, price: e.target.value })}
-                      className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
+                      className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-sm sm:text-base"
                       placeholder="0.00"
                     />
                   </div>
@@ -2742,20 +3125,37 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
 
                   <div className="flex gap-2">
                     <label htmlFor="product_image_url" className="sr-only">URL зображення</label>
-                    <input 
-                      id="product_image_url"
-                      name="image_url"
-                      type="text"
-                      autoComplete="off"
-                      value={imageUrlInput}
-                      onChange={e => setImageUrlInput(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none"
-                      placeholder="Вставте URL зображення..."
-                    />
+                    <div className="flex-1 relative">
+                      <input 
+                        id="product_image_url"
+                        name="image_url"
+                        type="text"
+                        autoComplete="off"
+                        value={imageUrlInput}
+                        onChange={e => setImageUrlInput(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-sm pr-10"
+                        placeholder="Вставте URL зображення..."
+                      />
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const text = await navigator.clipboard.readText();
+                            setImageUrlInput(text);
+                          } catch (err) {
+                            showNotification('Не вдалося отримати текст з буфера обміну', 'error');
+                          }
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-900"
+                        title="Вставити з буфера"
+                      >
+                        <Clipboard size={16} />
+                      </button>
+                    </div>
                     <button 
                       type="button"
                       onClick={() => addImageUrl()}
-                      className="bg-stone-900 text-white px-4 py-2 rounded-xl hover:bg-stone-800 transition-colors"
+                      className="bg-stone-900 text-white px-4 py-3 rounded-xl hover:bg-stone-800 transition-colors font-bold text-sm shrink-0"
                     >
                       Додати
                     </button>
@@ -2783,7 +3183,15 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                           </button>
                           <button 
                             type="button"
-                            onClick={() => setFormData({ ...formData, images: formData.images.filter((_, i) => i !== idx) })}
+                            onClick={() => {
+                              const removedUrl = formData.images[idx];
+                              // Видаляємо тільки якщо це нове фото (не було в базі)
+                              const isNewImage = !editingProduct || !editingProduct.images.includes(removedUrl);
+                              if (isNewImage && removedUrl) {
+                                deleteStorageFiles([removedUrl]);
+                              }
+                              setFormData({ ...formData, images: formData.images.filter((_, i) => i !== idx) });
+                            }}
                             className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-white"
                           >
                             <X size={14} />

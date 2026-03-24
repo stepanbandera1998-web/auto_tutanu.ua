@@ -46,5 +46,7 @@ export interface SiteSettings {
   catalog_header_image?: string;
   ads_header_image?: string;
   maintenance_mode?: boolean;
+  storage_limit_enabled?: boolean;
+  storage_limit_gb?: number;
   updated_at: string;
 }

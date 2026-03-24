@@ -115,6 +115,7 @@ export default function App() {
   const [selectedRadius, setSelectedRadius] = useState<string | null>(null);
 
   const [supabaseStatus, setSupabaseStatus] = useState<'checking' | 'connected' | 'error' | 'not-configured' | 'missing-tables'>('checking');
+  const [supabaseErrorMessage, setSupabaseErrorMessage] = useState<string | null>(null);
   const isFirstMount = useRef(true);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -167,14 +168,21 @@ export default function App() {
             setSupabaseStatus('missing-tables');
           } else {
             console.error('Тест з\'єднання Supabase повернув помилку:', error);
+            setSupabaseErrorMessage(error.message);
             setSupabaseStatus('error');
           }
         } else {
           console.log('Тест з\'єднання Supabase успішний (таблиці знайдено)');
+          setSupabaseErrorMessage(null);
           setSupabaseStatus('connected');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Тест з\'єднання Supabase не вдався:', err);
+        let message = err.message || String(err);
+        if (message.includes('Failed to fetch')) {
+          message = 'Помилка мережі або неправильний URL (Failed to fetch)';
+        }
+        setSupabaseErrorMessage(message);
         setSupabaseStatus('error');
       }
     };
@@ -211,36 +219,6 @@ export default function App() {
     
     init();
     
-      // Логування візиту на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
-      const logVisit = async () => {
-        const isStaticHost = window.location.hostname.includes('vercel.app');
-        if (isStaticHost) return;
-
-        try {
-          const hasVisited = sessionStorage.getItem('visited');
-          if (!hasVisited) {
-            const res = await fetch('/api/visit', { method: 'POST' });
-            if (res.ok) {
-              sessionStorage.setItem('visited', 'true');
-            }
-          }
-        } catch (err) {
-          // Silent fail for stats to avoid console clutter
-        }
-      };
-      logVisit();
-
-    const logClick = async (type: string) => {
-      if (supabase && supabaseStatus === 'connected') {
-        try {
-          await supabase.from('stats').insert([{ type: `click_${type}` }]);
-        } catch (err) {
-          // Silent fail for stats
-        }
-      }
-    };
-    (window as any).logClick = logClick;
-
     // Log visit to Supabase
     if (supabase) {
       const hasVisitedSupabase = sessionStorage.getItem('visited_supabase');
@@ -257,6 +235,17 @@ export default function App() {
         });
       }
     }
+
+    const logClick = async (type: string) => {
+      if (supabase && supabaseStatus === 'connected') {
+        try {
+          await supabase.from('stats').insert([{ type: `click_${type}` }]);
+        } catch (err) {
+          // Silent fail for stats
+        }
+      }
+    };
+    (window as any).logClick = logClick;
 
     const handleContextMenu = (e: MouseEvent) => {
       if ((e.target as HTMLElement).tagName === 'IMG') {
@@ -615,7 +604,8 @@ export default function App() {
                 {supabaseStatus === 'connected' ? 'Supabase Live' : 
                  supabaseStatus === 'checking' ? 'Connecting...' : 
                  supabaseStatus === 'missing-tables' ? 'Missing Tables' : 
-                 supabaseStatus === 'not-configured' ? 'Supabase Offline' : 'Supabase Error'}
+                 supabaseStatus === 'not-configured' ? 'Supabase Offline' : 
+                 supabaseStatus === 'error' ? `Error: ${supabaseErrorMessage || 'Unknown'}` : 'Supabase Error'}
               </span>
             </div>
             <div className="relative hidden sm:block">
@@ -815,20 +805,6 @@ export default function App() {
                       setSelectedProduct(p);
                       setCurrentImageIndex(0);
                       
-                      // Логування перегляду на локальний сервер (тільки якщо не на статичному хостингу як Vercel)
-                      const isStaticHost = window.location.hostname.includes('vercel.app');
-                      if (!isStaticHost) {
-                        fetch('/api/view', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ productId: p.id })
-                        }).then(res => {
-                          if (!res.ok) console.warn('Сервер повернув помилку при логуванні перегляду');
-                        }).catch(err => {
-                          // Silent fail
-                        });
-                      }
-
                       // Оновлення переглядів у Supabase
                       if (supabase) {
                         try {
