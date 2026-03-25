@@ -1551,99 +1551,103 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         </div>
                       </div>
                     )}
-                    <table className="w-full text-left min-w-[600px]">
-                      <thead className="bg-stone-50 border-bottom border-stone-200">
-                        <tr>
-                          <th className="px-6 py-4 w-10">
-                            <input 
-                              type="checkbox"
-                              id="bulk_select_all"
-                              name="bulk_select_all"
-                              aria-label="Вибрати всі товари"
-                              checked={selectedProductIds.length === filteredAdminProducts.length && filteredAdminProducts.length > 0}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedProductIds(filteredAdminProducts.map(p => p.id));
-                                } else {
-                                  setSelectedProductIds([]);
-                                }
-                              }}
-                              className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
-                            />
-                          </th>
-                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Код</th>
-                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Товар</th>
-                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Радіус</th>
-                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Ціна</th>
-                          <th className="px-6 py-4 text-sm font-medium text-stone-500">Перегляди</th>
-                          <th className="px-6 py-4 text-sm font-medium text-stone-500 text-right">Дії</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-100">
-                        {filteredAdminProducts.length > 0 ? filteredAdminProducts.map((product) => (
-                          <tr key={product.id} className={`hover:bg-stone-50 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-stone-50' : ''}`}>
-                            <td className="px-6 py-4">
+                    <div className="overflow-x-auto no-scrollbar">
+                      <table className="w-full text-left">
+                        <thead className="bg-stone-50 border-bottom border-stone-200">
+                          <tr>
+                            <th className="px-3 md:px-6 py-3 md:py-4 w-10">
                               <input 
                                 type="checkbox"
-                                checked={selectedProductIds.includes(product.id)}
-                                onChange={() => toggleProductSelection(product.id)}
+                                id="bulk_select_all"
+                                name="bulk_select_all"
+                                aria-label="Вибрати всі товари"
+                                checked={selectedProductIds.length === filteredAdminProducts.length && filteredAdminProducts.length > 0}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedProductIds(filteredAdminProducts.map(p => p.id));
+                                  } else {
+                                    setSelectedProductIds([]);
+                                  }
+                                }}
                                 className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
                               />
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="font-mono text-xs bg-stone-100 px-2 py-1 rounded text-stone-600">{product.sku}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <img 
-                                  src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/200/200'} 
-                                  className="w-10 h-10 rounded-lg object-cover"
-                                  alt=""
-                                  referrerPolicy="no-referrer"
-                                />
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{product.name}</span>
-                                  {product.is_sale && (
-                                    <span className="text-[10px] font-bold text-red-600 uppercase">Знижка</span>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-sm font-medium text-stone-600">{product.radius || '—'}</span>
-                            </td>
-                            <td className="px-6 py-4">{product.price} грн</td>
-                            <td className="px-6 py-4">{product.views}</td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setEditingProduct(product);
-                                    setFormData({
-                                      name: product.name,
-                                      description: product.description,
-                                      price: product.price.toString(),
-                                      images: product.images,
-                                      sku: product.sku,
-                                      is_sale: product.is_sale || false,
-                                      old_price: product.old_price?.toString() || '',
-                                      radius: product.radius || ''
-                                    });
-                                    setIsAdding(true);
-                                  }}
-                                  className="p-2 text-stone-400 hover:text-stone-900 transition-colors"
-                                >
-                                  <Edit size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDelete(product.id)}
-                                  className="p-2 text-stone-400 hover:text-red-600 transition-colors"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              </div>
-                            </td>
+                            </th>
+                            <th className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Код</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Товар</th>
+                            <th className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Радіус</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Ціна</th>
+                            <th className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Перегляди</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider text-right">Дії</th>
                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {filteredAdminProducts.length > 0 ? filteredAdminProducts.map((product) => (
+                            <tr key={product.id} className={`hover:bg-stone-50 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-stone-50' : ''}`}>
+                              <td className="px-3 md:px-6 py-3 md:py-4">
+                                <input 
+                                  type="checkbox"
+                                  checked={selectedProductIds.includes(product.id)}
+                                  onChange={() => toggleProductSelection(product.id)}
+                                  className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
+                                />
+                              </td>
+                              <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4">
+                                <span className="font-mono text-[10px] md:text-xs bg-stone-100 px-2 py-1 rounded text-stone-600">{product.sku}</span>
+                              </td>
+                              <td className="px-3 md:px-6 py-3 md:py-4">
+                                <div className="flex items-center gap-2 md:gap-3">
+                                  <img 
+                                    src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/200/200'} 
+                                    className="w-8 h-8 md:w-10 md:h-10 rounded-lg object-cover shrink-0"
+                                    alt=""
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-medium text-xs md:text-base truncate">{product.name}</span>
+                                    <div className="flex items-center gap-1">
+                                      {product.is_sale && (
+                                        <span className="text-[8px] md:text-[10px] font-bold text-red-600 uppercase">Знижка</span>
+                                      )}
+                                      <span className="sm:hidden text-[9px] text-stone-400">#{product.sku}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4">
+                                <span className="text-sm font-medium text-stone-600">{product.radius || '—'}</span>
+                              </td>
+                              <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-base whitespace-nowrap">{product.price} грн</td>
+                              <td className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 text-sm">{product.views}</td>
+                              <td className="px-3 md:px-6 py-3 md:py-4 text-right">
+                                <div className="flex justify-end gap-1 md:gap-2">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingProduct(product);
+                                      setFormData({
+                                        name: product.name,
+                                        description: product.description,
+                                        price: product.price.toString(),
+                                        images: product.images,
+                                        sku: product.sku,
+                                        is_sale: product.is_sale || false,
+                                        old_price: product.old_price?.toString() || '',
+                                        radius: product.radius || ''
+                                      });
+                                      setIsAdding(true);
+                                    }}
+                                    className="p-1.5 md:p-2 text-stone-400 hover:text-stone-900 transition-colors"
+                                  >
+                                    <Edit size={14} className="md:w-[18px] md:h-[18px]" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDelete(product.id)}
+                                    className="p-1.5 md:p-2 text-stone-400 hover:text-red-600 transition-colors"
+                                  >
+                                    <Trash2 size={14} className="md:w-[18px] md:h-[18px]" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
                         )) : (
                           <tr>
                             <td colSpan={7} className="px-6 py-12 text-center text-stone-400">
@@ -1669,10 +1673,11 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         )}
                       </tbody>
                     </table>
-                  </>
-                )}
-              </div>
+                  </div>
+                </>
+              )}
             </div>
+          </div>
 
             {/* Side Stats */}
             <div className="space-y-6">
@@ -1710,38 +1715,41 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
 
             <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto no-scrollbar">
-              <table className="w-full text-left min-w-[600px]">
+              <table className="w-full text-left">
                 <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Заголовок</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Ціна</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Телефон</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Тип</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Заголовок</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Ціна</th>
+                    <th className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Телефон</th>
+                    <th className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Тип</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {ads.length > 0 ? ads.map((ad) => (
                     <tr key={ad.id} className="hover:bg-stone-50 transition-colors">
-                      <td className="px-4 md:px-6 py-3 md:py-4">
-                        <div className="flex items-center gap-3">
+                      <td className="px-3 md:px-6 py-3 md:py-4">
+                        <div className="flex items-center gap-2 md:gap-3">
                           <img 
                             src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/ad/200/200'} 
-                            className="w-8 h-8 md:w-10 md:h-10 rounded-lg object-cover"
+                            className="w-8 h-8 md:w-10 md:h-10 rounded-lg object-cover shrink-0"
                             alt=""
                             referrerPolicy="no-referrer"
                           />
-                          <span className="font-medium text-sm md:text-base">{ad.title}</span>
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-medium text-xs md:text-base truncate">{ad.title}</span>
+                            <span className="sm:hidden text-[9px] text-stone-400 truncate">{ad.phone}</span>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-4 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.price} грн</td>
-                      <td className="px-4 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.phone}</td>
-                      <td className="px-4 md:px-6 py-3 md:py-4">
+                      <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-base whitespace-nowrap">{ad.price} грн</td>
+                      <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.phone}</td>
+                      <td className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4">
                         <span className={`px-2 py-1 rounded-full text-[10px] md:text-xs font-medium ${ad.is_placeholder ? 'bg-stone-100 text-stone-600' : 'bg-emerald-50 text-emerald-600'}`}>
                           {ad.is_placeholder ? 'Заглушка' : 'Активне'}
                         </span>
                       </td>
-                      <td className="px-4 md:px-6 py-3 md:py-4 text-right">
+                      <td className="px-3 md:px-6 py-3 md:py-4 text-right">
                         <div className="flex justify-end gap-1 md:gap-2">
                           <button 
                             onClick={() => {
@@ -1759,13 +1767,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                             }}
                             className="p-1.5 md:p-2 text-stone-400 hover:text-stone-900 transition-colors"
                           >
-                            <Edit size={16} className="md:w-[18px] md:h-[18px]" />
+                            <Edit size={14} className="md:w-[18px] md:h-[18px]" />
                           </button>
                           <button 
                             onClick={() => handleDeleteAd(ad.id)}
                             className="p-1.5 md:p-2 text-stone-400 hover:text-red-600 transition-colors"
                           >
-                            <Trash2 size={16} className="md:w-[18px] md:h-[18px]" />
+                            <Trash2 size={14} className="md:w-[18px] md:h-[18px]" />
                           </button>
                         </div>
                       </td>
@@ -1799,41 +1807,44 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
 
             <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto no-scrollbar">
-              <table className="w-full text-left min-w-[600px]">
+              <table className="w-full text-left">
                 <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Клієнт</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Рейтинг</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Коментар</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Дата</th>
-                    <th className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Клієнт</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Рейтинг</th>
+                    <th className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Коментар</th>
+                    <th className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Дата</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {reviews.length > 0 ? reviews.map((review) => (
                     <tr key={review.id} className="hover:bg-stone-50 transition-colors">
-                      <td className="px-4 md:px-6 py-3 md:py-4">
-                        <span className="font-medium text-sm md:text-base">{review.user_name}</span>
+                      <td className="px-3 md:px-6 py-3 md:py-4">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-xs md:text-base">{review.user_name}</span>
+                          <span className="sm:hidden text-[9px] text-stone-400 line-clamp-1">{review.comment}</span>
+                        </div>
                       </td>
-                      <td className="px-4 md:px-6 py-3 md:py-4">
+                      <td className="px-3 md:px-6 py-3 md:py-4">
                         <div className="flex gap-0.5 text-amber-400">
                           {[...Array(5)].map((_, i) => (
-                            <Star key={i} size={12} className="md:w-[14px] md:h-[14px]" fill={i < review.rating ? "currentColor" : "none"} />
+                            <Star key={i} size={10} className="md:w-4 md:h-4" fill={i < review.rating ? "currentColor" : "none"} />
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 md:px-6 py-3 md:py-4">
+                      <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4">
                         <p className="text-xs md:text-sm text-stone-600 line-clamp-2 max-w-md">{review.comment}</p>
                       </td>
-                      <td className="px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm text-stone-500">
+                      <td className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm text-stone-500">
                         {new Date(review.created_at).toLocaleDateString('uk-UA')}
                       </td>
-                      <td className="px-4 md:px-6 py-3 md:py-4 text-right">
+                      <td className="px-3 md:px-6 py-3 md:py-4 text-right">
                         <button 
                           onClick={() => handleDeleteReview(review.id)}
                           className="p-1.5 md:p-2 text-stone-400 hover:text-red-600 transition-colors"
                         >
-                          <Trash2 size={16} className="md:w-[18px] md:h-[18px]" />
+                          <Trash2 size={14} className="md:w-[18px] md:h-[18px]" />
                         </button>
                       </td>
                     </tr>

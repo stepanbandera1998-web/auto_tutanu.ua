@@ -18,7 +18,11 @@ import {
   Send,
   Facebook,
   RefreshCw,
-  Package
+  Package,
+  LayoutGrid,
+  List,
+  Grid,
+  Square
 } from 'lucide-react';
 import { WheelLogo } from './components/WheelLogo';
 import { MultiSpokeLogo } from './components/MultiSpokeLogo';
@@ -40,7 +44,60 @@ const TELEGRAM_CHANNEL_LINK = "https://t.me/auto_tutanu";
 type Tab = 'catalog' | 'reviews' | 'ads';
 
 // Memoized Product Card to prevent unnecessary re-renders
-const ProductCard = React.memo(({ product, onSelect }: { product: any, onSelect: (p: any) => void }) => {
+const ProductCard = React.memo(({ product, onSelect, viewMode }: { product: any, onSelect: (p: any) => void, viewMode: 'gallery' | 'grid' | 'list' }) => {
+  if (viewMode === 'list') {
+    // OLX-style horizontal layout for mobile
+    return (
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.4 }}
+        onClick={() => onSelect(product)}
+        className="group cursor-pointer bg-white rounded-2xl border border-stone-100 overflow-hidden flex sm:block sm:bg-transparent sm:border-0 sm:rounded-none sm:overflow-visible"
+      >
+        <div className="w-1/3 sm:w-full aspect-square sm:aspect-square rounded-none sm:rounded-3xl overflow-hidden bg-white relative border-r sm:border border-stone-100 shrink-0">
+          <img 
+            src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/800/1000'} 
+            className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
+            alt={product.name || 'Товар'}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            draggable="false"
+          />
+          {product.is_sale && (
+            <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider shadow-lg sm:top-4 sm:left-4 sm:text-[10px] sm:px-3 sm:py-1">
+              Знижка
+            </div>
+          )}
+        </div>
+        
+        <div className="flex-1 p-3 sm:p-0 sm:mt-4 flex flex-col justify-between sm:block">
+          <div>
+            <div className="flex justify-between items-start mb-1 gap-2">
+              <h4 className="font-bold text-sm sm:text-lg group-hover:text-stone-600 transition-colors line-clamp-2 sm:line-clamp-1">{product.name}</h4>
+              <span className="hidden sm:inline-block text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter shrink-0">Код: {product.sku}</span>
+            </div>
+            <div className="flex items-center gap-2 mb-2 sm:mb-0">
+              <p className="text-stone-900 font-mono font-bold text-base sm:font-medium">{product.price} грн</p>
+              {product.is_sale && product.old_price && (
+                <p className="text-stone-400 font-mono text-xs sm:text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between sm:hidden mt-auto">
+            <span className="text-[9px] font-mono text-stone-400 uppercase tracking-tighter">#{product.sku}</span>
+            <span className="text-[9px] text-stone-400 font-medium">В наявності</span>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Gallery (1-column cards) or Grid (2-column cards)
+  const isGrid = viewMode === 'grid';
+  
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -50,7 +107,7 @@ const ProductCard = React.memo(({ product, onSelect }: { product: any, onSelect:
       onClick={() => onSelect(product)}
       className="group cursor-pointer"
     >
-      <div className="aspect-square rounded-3xl overflow-hidden bg-white mb-4 relative border border-stone-100">
+      <div className={`aspect-square rounded-2xl md:rounded-3xl overflow-hidden bg-white mb-3 md:mb-4 relative border border-stone-100`}>
         <img 
           src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/800/1000'} 
           className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
@@ -60,24 +117,24 @@ const ProductCard = React.memo(({ product, onSelect }: { product: any, onSelect:
           draggable="false"
         />
         {product.is_sale && (
-          <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg">
+          <div className={`absolute top-2 left-2 md:top-4 md:left-4 bg-red-600 text-white px-2 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-[10px] font-bold uppercase tracking-wider shadow-lg`}>
             Знижка
           </div>
         )}
         <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
+          <span className="bg-white text-stone-900 px-4 py-1.5 md:px-6 md:py-2 rounded-full font-bold text-xs md:text-sm">
             Детальніше
           </span>
         </div>
       </div>
-      <div className="flex justify-between items-start mb-1">
-        <h4 className="font-bold text-lg group-hover:text-stone-600 transition-colors">{product.name}</h4>
-        <span className="text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter">Код: {product.sku}</span>
+      <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-1 gap-1">
+        <h4 className={`font-bold ${isGrid ? 'text-sm md:text-lg' : 'text-lg'} group-hover:text-stone-600 transition-colors truncate`}>{product.name}</h4>
+        <span className="text-[8px] md:text-[10px] font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-500 uppercase tracking-tighter w-fit">#{product.sku}</span>
       </div>
-      <div className="flex items-center gap-2">
-        <p className="text-stone-900 font-mono font-medium">{product.price} грн</p>
+      <div className="flex items-center gap-1.5 md:gap-2">
+        <p className={`text-stone-900 font-mono font-medium ${isGrid ? 'text-sm md:text-base' : 'text-base'}`}>{product.price} грн</p>
         {product.is_sale && product.old_price && (
-          <p className="text-stone-400 font-mono text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
+          <p className={`text-stone-400 font-mono text-[10px] md:text-sm line-through decoration-red-500/50`}>{product.old_price} грн</p>
         )}
       </div>
     </motion.div>
@@ -97,6 +154,7 @@ export default function App() {
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
   const [isLoadingAds, setIsLoadingAds] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'gallery' | 'grid' | 'list'>('grid');
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
@@ -749,7 +807,33 @@ export default function App() {
                   {r}
                 </button>
               ))}
-              <div className="sm:ml-auto">
+              <div className="sm:ml-auto flex items-center gap-2">
+                <div className="flex bg-stone-100 p-1 rounded-xl mr-2">
+                  <button 
+                    onClick={() => setViewMode('gallery')}
+                    className={`p-2 px-3 rounded-lg transition-all flex items-center gap-2 ${viewMode === 'gallery' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                    title="Галерея"
+                  >
+                    <Square size={18} />
+                    <span className="text-xs font-bold hidden sm:inline">Галерея</span>
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('grid')}
+                    className={`p-2 px-3 rounded-lg transition-all flex items-center gap-2 ${viewMode === 'grid' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                    title="Сітка"
+                  >
+                    <Grid size={18} />
+                    <span className="text-xs font-bold hidden sm:inline">Сітка</span>
+                  </button>
+                  <button 
+                    onClick={() => setViewMode('list')}
+                    className={`p-2 px-3 rounded-lg transition-all flex items-center gap-2 ${viewMode === 'list' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                    title="Список"
+                  >
+                    <List size={18} />
+                    <span className="text-xs font-bold hidden sm:inline">Список</span>
+                  </button>
+                </div>
                 <button 
                   onClick={() => fetchProducts(0)}
                   disabled={isLoadingProducts}
@@ -761,7 +845,11 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 relative">
+            <div className={`grid gap-3 md:gap-8 relative ${
+              viewMode === 'grid' 
+                ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
+                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+            }`}>
               {isLoadingProducts && products.length === 0 ? (
                 <>
                   <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
@@ -801,6 +889,7 @@ export default function App() {
                   <ProductCard 
                     key={product.id} 
                     product={product} 
+                    viewMode={viewMode}
                     onSelect={async (p) => {
                       setSelectedProduct(p);
                       setCurrentImageIndex(0);
@@ -919,78 +1008,172 @@ export default function App() {
             </div>
           </div>
 
-          <div className="mb-12">
-            <h3 className="text-3xl font-bold mb-2">Актуальні оголошення</h3>
-            <p className="text-stone-500">Можливо, тут є саме те, що ви шукаєте</p>
+          <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+              <h3 className="text-3xl font-bold mb-2">Актуальні оголошення</h3>
+              <p className="text-stone-500">Можливо, тут є саме те, що ви шукаєте</p>
+            </div>
+            
+            {/* View Toggle for Ads */}
+            <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl w-fit self-end md:self-auto">
+              <button 
+                onClick={() => setViewMode('gallery')}
+                className={`p-2 px-3 rounded-lg transition-all flex items-center gap-2 ${viewMode === 'gallery' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                title="Галерея"
+              >
+                <Square size={18} />
+                <span className="text-xs font-bold hidden sm:inline">Галерея</span>
+              </button>
+              <button 
+                onClick={() => setViewMode('grid')}
+                className={`p-2 px-3 rounded-lg transition-all flex items-center gap-2 ${viewMode === 'grid' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                title="Сітка"
+              >
+                <Grid size={18} />
+                <span className="text-xs font-bold hidden sm:inline">Сітка</span>
+              </button>
+              <button 
+                onClick={() => setViewMode('list')}
+                className={`p-2 px-3 rounded-lg transition-all flex items-center gap-2 ${viewMode === 'list' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                title="Список"
+              >
+                <List size={18} />
+                <span className="text-xs font-bold hidden sm:inline">Список</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {/* Ads Grid/Table */}
+          <div className={`${
+            viewMode === 'grid' 
+              ? 'grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3' 
+              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+          } gap-3 md:gap-8`}>
             {isLoadingAds && ads.length === 0 ? (
               [...Array(6)].map((_, i) => (
                 <div key={i} className="animate-pulse">
-                  <div className="aspect-video bg-stone-200 rounded-3xl mb-4" />
+                  <div className="aspect-video bg-stone-200 rounded-2xl md:rounded-3xl mb-4" />
                   <div className="h-4 bg-stone-200 rounded w-3/4 mb-2" />
                   <div className="h-4 bg-stone-200 rounded w-1/2" />
                 </div>
               ))
             ) : (
-              ads.map((ad) => (
-                <motion.div 
-                  key={ad.id} 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.4 }}
-                  onClick={() => {
-                    if (!ad.is_placeholder) {
-                      setSelectedAd(ad);
-                      setCurrentImageIndex(0);
-                    }
-                  }}
-                  className={`group bg-white rounded-3xl border border-stone-100 overflow-hidden shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
-                >
-                  <div className="aspect-video relative overflow-hidden">
-                    <img 
-                      src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/wheel/800/600'} 
-                      className={`w-full h-full object-cover transition-all duration-500 ${ad.is_placeholder ? 'blur-md scale-110 grayscale' : 'group-hover:scale-110'}`}
-                      alt="" 
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                      draggable="false"
-                    />
-                    {ad.is_placeholder && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                        <span className="bg-white/20 backdrop-blur-md text-white px-6 py-3 rounded-full text-sm font-bold border border-white/30 text-center max-w-[80%]">
-                          Тут може бути ваше оголошення
-                        </span>
+              ads.map((ad) => {
+                if (viewMode === 'list') {
+                  // OLX-style horizontal layout for ads on mobile
+                  return (
+                    <motion.div 
+                      key={ad.id} 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      whileInView={{ opacity: 1, scale: 1 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.4 }}
+                      onClick={() => {
+                        if (!ad.is_placeholder) {
+                          setSelectedAd(ad);
+                          setCurrentImageIndex(0);
+                        }
+                      }}
+                      className={`group bg-white rounded-2xl border border-stone-100 overflow-hidden flex sm:block sm:bg-white sm:rounded-3xl sm:shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
+                    >
+                      <div className="w-1/3 sm:w-full aspect-square sm:aspect-video relative overflow-hidden shrink-0 border-r sm:border-0 border-stone-100">
+                        <img 
+                          src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/wheel/800/600'} 
+                          className={`w-full h-full object-cover transition-all duration-500 ${ad.is_placeholder ? 'blur-md scale-110 grayscale' : 'group-hover:scale-110'}`}
+                          alt="" 
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
+                          draggable="false"
+                        />
+                        {ad.is_placeholder && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                            <span className="bg-white/20 backdrop-blur-md text-white px-2 py-1 rounded-full text-[8px] font-bold border border-white/30 text-center sm:hidden">
+                              Вільне місце
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {!ad.is_placeholder && (
-                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="bg-white text-stone-900 px-6 py-2 rounded-full font-bold text-sm">
-                          Переглянути
-                        </span>
+                      <div className="flex-1 p-3 sm:p-6 flex flex-col justify-between sm:block">
+                        <div>
+                          <div className="flex justify-between items-start mb-1 sm:mb-4 gap-2">
+                            <h4 className={`font-bold text-sm sm:text-xl line-clamp-2 sm:line-clamp-1 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.title}</h4>
+                            <p className={`font-mono font-bold text-stone-900 text-xs sm:text-base whitespace-nowrap ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.price} грн</p>
+                          </div>
+                          <p className={`hidden sm:block text-stone-500 text-sm mb-6 line-clamp-2 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>
+                            {ad.description}
+                          </p>
+                        </div>
+                        {!ad.is_placeholder && (
+                          <div className="w-full flex items-center justify-center gap-1.5 sm:gap-2 bg-stone-100 py-2 sm:py-3 rounded-xl font-bold text-stone-600 text-[10px] sm:text-sm">
+                            <Phone size={14} className="sm:w-[18px] sm:h-[18px]" /> {ad.phone}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <div className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <h4 className={`font-bold text-xl ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.title}</h4>
-                      <p className={`font-mono font-bold text-stone-900 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.price} грн</p>
+                    </motion.div>
+                  );
+                }
+
+                // Gallery/Grid layout for ads
+                return (
+                  <motion.div 
+                    key={ad.id} 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    whileInView={{ opacity: 1, scale: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.4 }}
+                    onClick={() => {
+                      if (!ad.is_placeholder) {
+                        setSelectedAd(ad);
+                        setCurrentImageIndex(0);
+                      }
+                    }}
+                    className={`group bg-white rounded-2xl md:rounded-3xl border border-stone-100 overflow-hidden shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
+                  >
+                    <div className="aspect-video relative overflow-hidden">
+                      <img 
+                        src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/wheel/800/600'} 
+                        className={`w-full h-full object-cover transition-all duration-500 ${ad.is_placeholder ? 'blur-md scale-110 grayscale' : 'group-hover:scale-110'}`}
+                        alt="" 
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                        draggable="false"
+                      />
+                      {ad.is_placeholder && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                          <span className="bg-white/20 backdrop-blur-md text-white px-3 py-1.5 md:px-6 md:py-3 rounded-full text-[10px] md:text-sm font-bold border border-white/30 text-center max-w-[90%]">
+                            Тут може бути ваше оголошення
+                          </span>
+                        </div>
+                      )}
+                      {!ad.is_placeholder && (
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="bg-white text-stone-900 px-4 py-1.5 md:px-6 md:py-2 rounded-full font-bold text-xs md:text-sm">
+                            Переглянути
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <p className={`text-stone-500 text-sm mb-6 line-clamp-2 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>
-                      {ad.description}
-                    </p>
-                    {!ad.is_placeholder && (
-                      <div className="w-full flex items-center justify-center gap-2 bg-stone-100 py-3 rounded-xl font-bold text-stone-600">
-                        <Phone size={18} /> {ad.phone}
+                    <div className="p-3 md:p-6">
+                      <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-2 md:mb-4 gap-1">
+                        <h4 className={`font-bold text-sm md:text-xl truncate ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.title}</h4>
+                        <p className={`font-mono font-bold text-stone-900 text-xs md:text-base ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.price} грн</p>
                       </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))
+                      <p className={`text-stone-500 text-[10px] md:text-sm mb-3 md:mb-6 line-clamp-2 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>
+                        {ad.description}
+                      </p>
+                      {!ad.is_placeholder && (
+                        <div className="w-full flex items-center justify-center gap-1.5 md:gap-2 bg-stone-100 py-2 md:py-3 rounded-xl font-bold text-stone-600 text-[10px] md:text-sm">
+                          <Phone size={14} className="md:w-[18px] md:h-[18px]" /> {ad.phone}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })
             )}
           </div>
+
+          {/* Mobile Table View for Ads (Removed as it's replaced by OLX-style list) */}
         </main>
       )}
 
