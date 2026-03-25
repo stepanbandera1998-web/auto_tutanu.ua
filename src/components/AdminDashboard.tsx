@@ -1911,8 +1911,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
               <div className="admin-card bg-white p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-stone-100 shadow-sm">
                 <h3 className="text-lg md:text-xl font-bold mb-6 md:mb-8">Популярність товарів</h3>
-                <div className="h-[250px] md:h-[300px] w-full" style={{ minHeight: '250px' }}>
-                  {isChartVisible && stats?.mostViewed && stats.mostViewed.length > 0 && (
+                <div className="h-[250px] md:h-[300px] w-full relative" style={{ minHeight: '250px' }}>
+                  {isChartVisible && !isRefreshingStats && !isLoadingProducts && stats?.mostViewed && stats.mostViewed.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%" minHeight={250}>
                       <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
@@ -1951,6 +1951,20 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 gap-3">
+                      {(isRefreshingStats || isLoadingProducts) ? (
+                        <>
+                          <RefreshCw size={24} className="animate-spin text-stone-300" />
+                          <span className="text-sm">Завантаження даних...</span>
+                        </>
+                      ) : (
+                        <>
+                          <TrendingUp size={24} className="opacity-20" />
+                          <span className="text-sm">Немає даних для відображення</span>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="mt-4 md:mt-6 space-y-2 md:space-y-3">
