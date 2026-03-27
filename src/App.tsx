@@ -70,6 +70,11 @@ const ProductCard = React.memo(({ product, onSelect, viewMode }: { product: any,
               Знижка
             </div>
           )}
+          {product.is_sold && (
+            <div className="absolute top-2 right-2 bg-red-600 text-white px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider shadow-lg sm:text-[10px] sm:px-3 sm:py-1 z-10">
+              ПРОДАНО
+            </div>
+          )}
         </div>
         
         <div className="flex-1 p-3 sm:p-6 flex flex-col justify-between">
@@ -89,7 +94,11 @@ const ProductCard = React.memo(({ product, onSelect, viewMode }: { product: any,
           <div className="flex items-center justify-between mt-auto">
             <div className="flex items-center gap-4">
               <span className="text-[9px] sm:text-xs font-mono text-stone-400 uppercase tracking-tighter">#{product.sku}</span>
-              <span className="text-[9px] sm:text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">В наявності</span>
+              {product.is_sold ? (
+                <span className="text-[9px] sm:text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-full">ПРОДАНО</span>
+              ) : (
+                <span className="text-[9px] sm:text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">В наявності</span>
+              )}
             </div>
             <button className="hidden sm:flex items-center gap-2 text-stone-900 font-bold hover:gap-3 transition-all">
               Детальніше <ArrowRight size={18} />
@@ -126,9 +135,17 @@ const ProductCard = React.memo(({ product, onSelect, viewMode }: { product: any,
             Знижка
           </div>
         )}
-        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+        {product.is_sold && (
+          <div className={`absolute top-2 right-2 md:top-4 md:right-4 bg-red-600 text-white px-2 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-[10px] font-black uppercase tracking-wider shadow-lg z-10`}>
+            ПРОДАНО
+          </div>
+        )}
+        <div className={`absolute inset-0 bg-black/40 ${product.is_sold ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2`}>
+          {product.is_sold && (
+            <span className="text-white font-black text-xl md:text-3xl tracking-tighter drop-shadow-lg">ПРОДАНО</span>
+          )}
           <span className="bg-white text-stone-900 px-4 py-1.5 md:px-6 md:py-2 rounded-full font-bold text-xs md:text-sm">
-            Детальніше
+            {product.is_sold ? 'Переглянути' : 'Детальніше'}
           </span>
         </div>
       </div>
@@ -1535,6 +1552,9 @@ export default function App() {
                       <h3 className="text-xl sm:text-3xl font-bold">{selectedProduct.name}</h3>
                       {selectedProduct.is_sale && (
                         <span className="inline-block w-fit bg-red-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Знижка</span>
+                      )}
+                      {selectedProduct.is_sold && (
+                        <span className="inline-block w-fit bg-red-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-lg">ПРОДАНО</span>
                       )}
                     </div>
                     <span className="text-[10px] sm:text-xs font-mono bg-stone-100 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-stone-500 uppercase tracking-wider">Код: {selectedProduct.sku}</span>

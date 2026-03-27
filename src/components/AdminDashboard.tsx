@@ -65,6 +65,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     images: [] as string[],
     sku: '',
     is_sale: false,
+    is_sold: false,
     old_price: '',
     radius: ''
   });
@@ -602,7 +603,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         price,
         images: formData.images,
         sku,
-        radius: formData.radius
+        radius: formData.radius,
+        is_sold: formData.is_sold
       };
 
       // Only include sale fields if they are actually used to avoid errors if columns don't exist yet
@@ -656,7 +658,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         showNotification(editingProduct ? 'Товар оновлено!' : 'Товар опубліковано!');
         setIsAdding(false);
         setEditingProduct(null);
-        setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '', radius: '' });
+        setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, is_sold: false, old_price: '', radius: '' });
       } catch (error: any) {
         console.error('Помилка при відправці товару:', error);
         showNotification('Помилка: ' + error.message, 'error');
@@ -739,6 +741,24 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       showNotification('Помилка: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const toggleSold = async (product: Product) => {
+    try {
+      if (!supabase) throw new Error('Supabase not configured');
+      const { error } = await supabase
+        .from('products')
+        .update({ is_sold: !product.is_sold })
+        .eq('id', product.id);
+      
+      if (error) throw error;
+      
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, is_sold: !p.is_sold } : p));
+      showNotification(product.is_sold ? 'Товар знову в наявності' : 'Товар позначено як проданий', 'success');
+    } catch (err: any) {
+      console.error('Toggle sold error:', err);
+      showNotification('Помилка при зміні статусу: ' + err.message, 'error');
     }
   };
 
@@ -1500,7 +1520,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   onClick={() => {
                     setIsAdding(true);
                     setEditingProduct(null);
-                    setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, old_price: '', radius: '' });
+                    setFormData({ name: '', description: '', price: '', images: [], sku: '', is_sale: false, is_sold: false, old_price: '', radius: '' });
                   }}
                   className="w-full sm:w-auto flex items-center justify-center gap-2 bg-stone-900 text-white px-4 py-3 sm:py-2 rounded-xl hover:bg-stone-800 transition-colors font-bold shadow-lg shadow-stone-200"
                 >
@@ -1608,6 +1628,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                       {product.is_sale && (
                                         <span className="text-[8px] md:text-[10px] font-bold text-red-600 uppercase">Знижка</span>
                                       )}
+                                      {product.is_sold && (
+                                        <span className="text-[8px] md:text-[10px] font-bold text-stone-500 uppercase">Продано</span>
+                                      )}
                                       <span className="sm:hidden text-[9px] text-stone-400">#{product.sku}</span>
                                     </div>
                                   </div>
@@ -1621,6 +1644,13 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               <td className="px-3 md:px-6 py-3 md:py-4 text-right">
                                 <div className="flex justify-end gap-1 md:gap-2">
                                   <button 
+                                    onClick={() => toggleSold(product)}
+                                    className={`p-1.5 md:p-2 transition-colors ${product.is_sold ? 'text-emerald-600' : 'text-stone-400 hover:text-stone-900'}`}
+                                    title={product.is_sold ? "Позначити як в наявності" : "Позначити як продано"}
+                                  >
+                                    <Clipboard size={14} className="md:w-[18px] md:h-[18px]" />
+                                  </button>
+                                  <button 
                                     onClick={() => {
                                       setEditingProduct(product);
                                       setFormData({
@@ -1630,6 +1660,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                         images: product.images,
                                         sku: product.sku,
                                         is_sale: product.is_sale || false,
+                                        is_sold: product.is_sold || false,
                                         old_price: product.old_price?.toString() || '',
                                         radius: product.radius || ''
                                       });
@@ -2218,7 +2249,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                     {Object.entries(dbHealth).map(([table, status]: [string, any]) => {
                       const requiredColumns: { [key: string]: string[] } = {
-                        products: ['id', 'name', 'description', 'price', 'images', 'sku', 'radius', 'is_sale', 'old_price'],
+                        products: ['id', 'name', 'description', 'price', 'images', 'sku', 'radius', 'is_sale', 'is_sold', 'old_price'],
                         ads: ['id', 'title', 'description', 'price', 'phone', 'images', 'is_placeholder', 'product_id'],
                         reviews: ['id', 'user_name', 'rating', 'comment', 'created_at'],
                         stats: ['id', 'type', 'created_at'],
@@ -2278,6 +2309,7 @@ CREATE TABLE IF NOT EXISTS products (
   sku TEXT UNIQUE,
   radius TEXT,
   is_sale BOOLEAN DEFAULT FALSE,
+  is_sold BOOLEAN DEFAULT FALSE,
   old_price DECIMAL,
   views BIGINT DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
@@ -2350,6 +2382,7 @@ CREATE POLICY "Allow all for site_settings" ON site_settings FOR ALL USING (true
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS radius TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sold BOOLEAN DEFAULT FALSE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS old_price DECIMAL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS views BIGINT DEFAULT 0;
 
@@ -2372,6 +2405,7 @@ CREATE TABLE IF NOT EXISTS products (
   sku TEXT UNIQUE,
   radius TEXT,
   is_sale BOOLEAN DEFAULT FALSE,
+  is_sold BOOLEAN DEFAULT FALSE,
   old_price DECIMAL,
   views BIGINT DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
@@ -2444,6 +2478,7 @@ CREATE POLICY "Allow all for site_settings" ON site_settings FOR ALL USING (true
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS radius TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sale BOOLEAN DEFAULT FALSE;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_sold BOOLEAN DEFAULT FALSE;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS old_price DECIMAL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS views BIGINT DEFAULT 0;
 
@@ -3018,6 +3053,17 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
                     />
                     <label htmlFor="is_sale" className="text-sm font-medium text-stone-700">Товар на знижці</label>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <input 
+                      type="checkbox"
+                      id="is_sold"
+                      name="is_sold"
+                      checked={formData.is_sold}
+                      onChange={e => setFormData({ ...formData, is_sold: e.target.checked })}
+                      className="w-5 h-5 rounded border-stone-200 text-stone-900 focus:ring-stone-900"
+                    />
+                    <label htmlFor="is_sold" className="text-sm font-medium text-stone-700">Товар продано</label>
                   </div>
                   {formData.is_sale && (
                     <div className="space-y-2">
