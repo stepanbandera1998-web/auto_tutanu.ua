@@ -529,7 +529,7 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 's123321s') {
+    if (password === 'Paparadze443321') {
       setIsAdmin(true);
       setShowAdminLogin(false);
       setPassword('');
