@@ -54,9 +54,9 @@ const ProductCard = React.memo(({ product, onSelect, viewMode }: { product: any,
         viewport={{ once: true }}
         transition={{ duration: 0.4 }}
         onClick={() => onSelect(product)}
-        className="group cursor-pointer bg-white rounded-2xl border border-stone-100 overflow-hidden flex sm:block sm:bg-transparent sm:border-0 sm:rounded-none sm:overflow-visible"
+        className="group cursor-pointer bg-white rounded-2xl border border-stone-100 overflow-hidden flex"
       >
-        <div className="w-1/3 sm:w-full aspect-square sm:aspect-square rounded-none sm:rounded-3xl overflow-hidden bg-white relative border-r sm:border border-stone-100 shrink-0">
+        <div className="w-1/3 sm:w-1/4 lg:w-1/5 aspect-square rounded-none overflow-hidden bg-white relative border-r border-stone-100 shrink-0">
           <img 
             src={(Array.isArray(product.images) && product.images.length > 0) ? product.images[0] : 'https://picsum.photos/seed/car/800/1000'} 
             className="w-full h-full object-contain p-2 transition-transform duration-700 group-hover:scale-110"
@@ -66,29 +66,34 @@ const ProductCard = React.memo(({ product, onSelect, viewMode }: { product: any,
             draggable="false"
           />
           {product.is_sale && (
-            <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider shadow-lg sm:top-4 sm:left-4 sm:text-[10px] sm:px-3 sm:py-1">
+            <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider shadow-lg sm:text-[10px] sm:px-3 sm:py-1">
               Знижка
             </div>
           )}
         </div>
         
-        <div className="flex-1 p-3 sm:p-0 sm:mt-4 flex flex-col justify-between sm:block">
+        <div className="flex-1 p-3 sm:p-6 flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-start mb-1 gap-2">
-              <h4 className="font-bold text-sm sm:text-lg group-hover:text-stone-600 transition-colors line-clamp-2 sm:line-clamp-1">{product.name}</h4>
+              <h4 className="font-bold text-sm sm:text-xl group-hover:text-stone-600 transition-colors line-clamp-2">{product.name}</h4>
               <span className="hidden sm:inline-block text-[10px] font-mono bg-stone-100 px-2 py-0.5 rounded text-stone-500 uppercase tracking-tighter shrink-0">Код: {product.sku}</span>
             </div>
-            <div className="flex items-center gap-2 mb-2 sm:mb-0">
-              <p className="text-stone-900 font-mono font-bold text-base sm:font-medium">{product.price} грн</p>
+            <div className="flex items-center gap-2">
+              <p className="text-stone-900 font-mono font-bold text-base sm:text-2xl">{product.price} грн</p>
               {product.is_sale && product.old_price && (
-                <p className="text-stone-400 font-mono text-xs sm:text-sm line-through decoration-red-500/50">{product.old_price} грн</p>
+                <p className="text-stone-400 font-mono text-xs sm:text-lg line-through decoration-red-500/50">{product.old_price} грн</p>
               )}
             </div>
           </div>
           
-          <div className="flex items-center justify-between sm:hidden mt-auto">
-            <span className="text-[9px] font-mono text-stone-400 uppercase tracking-tighter">#{product.sku}</span>
-            <span className="text-[9px] text-stone-400 font-medium">В наявності</span>
+          <div className="flex items-center justify-between mt-auto">
+            <div className="flex items-center gap-4">
+              <span className="text-[9px] sm:text-xs font-mono text-stone-400 uppercase tracking-tighter">#{product.sku}</span>
+              <span className="text-[9px] sm:text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded-full">В наявності</span>
+            </div>
+            <button className="hidden sm:flex items-center gap-2 text-stone-900 font-bold hover:gap-3 transition-all">
+              Детальніше <ArrowRight size={18} />
+            </button>
           </div>
         </div>
       </motion.div>
@@ -847,8 +852,10 @@ export default function App() {
 
             <div className={`grid gap-3 md:gap-8 relative ${
               viewMode === 'grid' 
-                ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
-                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4' 
+                : viewMode === 'gallery'
+                ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3'
+                : 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-2'
             }`}>
               {isLoadingProducts && products.length === 0 ? (
                 <>
@@ -1046,8 +1053,10 @@ export default function App() {
           {/* Ads Grid/Table */}
           <div className={`${
             viewMode === 'grid' 
-              ? 'grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3' 
-              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+              ? 'grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' 
+              : viewMode === 'gallery'
+              ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+              : 'grid grid-cols-1 lg:grid-cols-2'
           } gap-3 md:gap-8`}>
             {isLoadingAds && ads.length === 0 ? (
               [...Array(6)].map((_, i) => (
@@ -1074,9 +1083,9 @@ export default function App() {
                           setCurrentImageIndex(0);
                         }
                       }}
-                      className={`group bg-white rounded-2xl border border-stone-100 overflow-hidden flex sm:block sm:bg-white sm:rounded-3xl sm:shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
+                      className={`group bg-white rounded-2xl border border-stone-100 overflow-hidden flex sm:bg-white sm:rounded-3xl sm:shadow-sm ${!ad.is_placeholder ? 'cursor-pointer' : ''}`}
                     >
-                      <div className="w-1/3 sm:w-full aspect-square sm:aspect-video relative overflow-hidden shrink-0 border-r sm:border-0 border-stone-100">
+                      <div className="w-1/3 sm:w-1/4 lg:w-1/3 aspect-square sm:aspect-video relative overflow-hidden shrink-0 border-r sm:border-r border-stone-100">
                         <img 
                           src={Array.isArray(ad.images) && ad.images.length > 0 ? ad.images[0] : 'https://picsum.photos/seed/wheel/800/600'} 
                           className={`w-full h-full object-cover transition-all duration-500 ${ad.is_placeholder ? 'blur-md scale-110 grayscale' : 'group-hover:scale-110'}`}
@@ -1093,7 +1102,7 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      <div className="flex-1 p-3 sm:p-6 flex flex-col justify-between sm:block">
+                      <div className="flex-1 p-3 sm:p-6 flex flex-col justify-between">
                         <div>
                           <div className="flex justify-between items-start mb-1 sm:mb-4 gap-2">
                             <h4 className={`font-bold text-sm sm:text-xl line-clamp-2 sm:line-clamp-1 ${ad.is_placeholder ? 'blur-[4px]' : ''}`}>{ad.title}</h4>
