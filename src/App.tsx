@@ -352,7 +352,7 @@ export default function App() {
       
       let query = supabase
         .from('products')
-        .select('id, name, description, price, images, sku, is_sale, old_price, views, radius, created_at', { count: 'exact' });
+        .select('id, name, description, price, images, sku, is_sale, is_sold, old_price, views, radius, created_at', { count: 'exact' });
 
       if (selectedRadius) {
         query = query.eq('radius', selectedRadius);
