@@ -1437,6 +1437,7 @@ export default function App() {
                       <button 
                         key={star}
                         type="button"
+                        aria-label={`Оцінка ${star} з 5`}
                         onClick={() => setNewReview({...newReview, rating: star})}
                         className={`p-1 transition-colors ${star <= newReview.rating ? 'text-amber-400' : 'text-stone-200'}`}
                       >

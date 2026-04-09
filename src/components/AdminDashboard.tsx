@@ -1618,6 +1618,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               <td className="px-3 md:px-6 py-3 md:py-4">
                                 <input 
                                   type="checkbox"
+                                  id={`select_product_${product.id}`}
+                                  name={`select_product_${product.id}`}
                                   checked={selectedProductIds.includes(product.id)}
                                   onChange={() => toggleProductSelection(product.id)}
                                   className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
@@ -1980,7 +1982,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 <h3 className="text-lg md:text-xl font-bold mb-6 md:mb-8">Популярність товарів</h3>
                 <div className="h-[250px] md:h-[300px] w-full relative" style={{ minHeight: '250px' }}>
                   {isChartVisible && !isRefreshingStats && !isLoadingProducts && stats?.mostViewed && stats.mostViewed.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%" minHeight={250}>
+                    <ResponsiveContainer width="100%" height="100%" minHeight={250} minWidth={0}>
                       <BarChart data={stats?.mostViewed || []} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
                         <XAxis 
@@ -2183,6 +2185,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <input 
                         type="file"
                         id="banner-upload"
+                        name="banner_upload"
                         accept="image/*"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
@@ -2544,6 +2547,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       <input 
                         type="file"
                         id="catalog-header-upload"
+                        name="catalog_header_upload"
                         className="hidden"
                         accept="image/*"
                         onChange={async (e) => {
@@ -2609,6 +2613,7 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                       <input 
                         type="file"
                         id="ads-header-upload"
+                        name="ads_header_upload"
                         className="hidden"
                         accept="image/*"
                         onChange={async (e) => {
@@ -2713,6 +2718,8 @@ ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFA
                     <div className="flex gap-2">
                       <input 
                         type="number" 
+                        id="storage_limit_gb"
+                        name="storage_limit_gb"
                         step="0.1"
                         value={siteSettings.storage_limit_gb || 3.5}
                         onChange={(e) => handleSaveSettings({ storage_limit_gb: parseFloat(e.target.value) })}
