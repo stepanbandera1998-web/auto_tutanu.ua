@@ -338,6 +338,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     try {
       let visitsCount = 0;
       let totalViews = 0;
+      let soldProductsCount = 0;
       let mostViewed: any[] = [];
       let clicks: { [key: string]: number } = {};
 
@@ -379,7 +380,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             visitsCount = vCount;
           }
 
-          // 4. Отримуємо кліки - ОПТИМІЗАЦІЯ: обмежуємо останніми 500 записами (замість 2000)
+          // 4. Отримуємо кількість проданих товарів
+          const { count: sCount, error: sError } = await supabase
+            .from('products')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_sold', true);
+          
+          if (!sError && sCount !== null) {
+            soldProductsCount = sCount;
+          }
+
+          // 5. Отримуємо кліки - ОПТИМІЗАЦІЯ: обмежуємо останніми 500 записами (замість 2000)
           // Використовуємо 'id' для сортування, оскільки це найбільш надійна колонка для порядку
           const { data: statsData, error: statsError } = await supabase
             .from('stats')
@@ -404,6 +415,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
       setStats({
         totalVisits: visitsCount,
         totalViews: totalViews,
+        soldProductsCount: soldProductsCount,
         mostViewed: mostViewed,
         onlineUsers: 0,
         clicks: clicks
@@ -1922,7 +1934,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
               <div className="admin-card bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-stone-100 shadow-sm">
                 <div className="flex items-center gap-4 mb-2 md:mb-4">
                   <div className="p-2.5 md:p-3 bg-emerald-50 text-emerald-600 rounded-xl md:rounded-2xl">
@@ -1947,6 +1959,19 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   </div>
                 </div>
                 <p className="text-[10px] md:text-xs text-stone-400">Сумарна кількість переглядів усіх товарів</p>
+              </div>
+
+              <div className="admin-card bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-4 mb-2 md:mb-4">
+                  <div className="p-2.5 md:p-3 bg-amber-50 text-amber-600 rounded-xl md:rounded-2xl">
+                    <Package size={20} className="md:w-6 md:h-6" />
+                  </div>
+                  <div>
+                    <p className="text-xs md:text-sm text-stone-500">Продано товарів</p>
+                    <p className="text-2xl md:text-3xl font-bold">{stats?.soldProductsCount || 0}</p>
+                  </div>
+                </div>
+                <p className="text-[10px] md:text-xs text-stone-400">Кількість товарів з відміткою "Продано"</p>
               </div>
             </div>
 

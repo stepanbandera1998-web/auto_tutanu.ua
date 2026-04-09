@@ -16,6 +16,7 @@ export interface Product {
 export interface Stats {
   totalVisits: number;
   totalViews: number;
+  soldProductsCount: number;
   mostViewed: { id: number; name: string; views: number; sku?: string }[];
   onlineUsers: number;
   clicks?: { [key: string]: number };
