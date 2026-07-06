@@ -1513,9 +1513,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
       <div className="max-w-7xl mx-auto px-4">
         {activeView === 'products' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
             {/* Product List */}
-            <div className="lg:col-span-2 space-y-4">
+            <div className="xl:col-span-3 space-y-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-4">
                   <h2 className="text-xl font-semibold">Товари</h2>
@@ -1555,7 +1555,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 />
               </div>
 
-              <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto">
+              <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
                 {isLoadingProducts ? (
                   <div className="p-12 text-center">
                     <div className="w-8 h-8 border-2 border-stone-200 border-t-stone-900 rounded-full animate-spin mx-auto mb-4" />
@@ -1568,8 +1568,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         <span className="text-sm font-medium">Вибрано: {selectedProductIds.length}</span>
                         <div className="flex gap-4">
                           <button 
-                            onClick={() => setSelectedProductIds([])}
-                            className="text-sm hover:underline"
+                             onClick={() => setSelectedProductIds([])}
+                             className="text-sm hover:underline"
                           >
                             Скасувати
                           </button>
@@ -1583,8 +1583,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         </div>
                       </div>
                     )}
-                    <div className="overflow-x-auto no-scrollbar">
-                      <table className="w-full text-left">
+                    <div className="overflow-x-auto custom-scrollbar pb-2">
+                      <table className="w-full min-w-[850px] text-left">
                         <thead className="bg-stone-50 border-bottom border-stone-200">
                           <tr>
                             <th className="px-3 md:px-6 py-3 md:py-4 w-10">
@@ -1604,17 +1604,17 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                 className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
                               />
                             </th>
-                            <th className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Код</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Код</th>
                             <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Товар</th>
-                            <th className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Радіус</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Радіус</th>
                             <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Ціна</th>
-                            <th className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Перегляди</th>
-                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider text-right">Дії</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider">Перегляди</th>
+                            <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-medium text-stone-500 uppercase tracking-wider text-right sticky right-0 bg-stone-50 shadow-[-8px_0_12px_-4px_rgba(0,0,0,0.05)] whitespace-nowrap z-10">Дії</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
                           {filteredAdminProducts.length > 0 ? filteredAdminProducts.map((product) => (
-                            <tr key={product.id} className={`hover:bg-stone-50 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-stone-50' : ''}`}>
+                            <tr key={product.id} className={`group/row hover:bg-stone-50 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-stone-50' : ''}`}>
                               <td className="px-3 md:px-6 py-3 md:py-4">
                                 <input 
                                   type="checkbox"
@@ -1625,7 +1625,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                   className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
                                 />
                               </td>
-                              <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4">
+                              <td className="px-3 md:px-6 py-3 md:py-4">
                                 <span className="font-mono text-[10px] md:text-xs bg-stone-100 px-2 py-1 rounded text-stone-600">{product.sku}</span>
                               </td>
                               <td className="px-3 md:px-6 py-3 md:py-4">
@@ -1650,16 +1650,16 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                   </div>
                                 </div>
                               </td>
-                              <td className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4">
+                              <td className="px-3 md:px-6 py-3 md:py-4">
                                 <span className="text-sm font-medium text-stone-600">{product.radius || '—'}</span>
                               </td>
                               <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-base whitespace-nowrap">{product.price} грн</td>
-                              <td className="hidden lg:table-cell px-4 md:px-6 py-3 md:py-4 text-sm">{product.views}</td>
-                              <td className="px-3 md:px-6 py-3 md:py-4 text-right">
+                              <td className="px-3 md:px-6 py-3 md:py-4 text-sm">{product.views}</td>
+                              <td className={`px-3 md:px-6 py-3 md:py-4 text-right sticky right-0 shadow-[-8px_0_12px_-4px_rgba(0,0,0,0.05)] whitespace-nowrap z-10 group-hover/row:bg-stone-50 transition-colors ${selectedProductIds.includes(product.id) ? 'bg-stone-50' : 'bg-white'}`}>
                                 <div className="flex justify-end gap-1 md:gap-2">
                                   <button 
                                     onClick={() => toggleSold(product)}
-                                    className={`p-1.5 md:p-2 transition-colors ${product.is_sold ? 'text-emerald-600' : 'text-stone-400 hover:text-stone-900'}`}
+                                    className={`p-1.5 md:p-2 rounded-lg transition-all ${product.is_sold ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'}`}
                                     title={product.is_sold ? "Позначити як в наявності" : "Позначити як продано"}
                                   >
                                     <Clipboard size={14} className="md:w-[18px] md:h-[18px]" />
@@ -1680,13 +1680,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                       });
                                       setIsAdding(true);
                                     }}
-                                    className="p-1.5 md:p-2 text-stone-400 hover:text-stone-900 transition-colors"
+                                    className="p-1.5 md:p-2 text-stone-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                    title="Редагувати"
                                   >
                                     <Edit size={14} className="md:w-[18px] md:h-[18px]" />
                                   </button>
                                   <button 
                                     onClick={() => handleDelete(product.id)}
-                                    className="p-1.5 md:p-2 text-stone-400 hover:text-red-600 transition-colors"
+                                    className="p-1.5 md:p-2 text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Видалити"
                                   >
                                     <Trash2 size={14} className="md:w-[18px] md:h-[18px]" />
                                   </button>
@@ -1759,14 +1761,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto no-scrollbar">
-              <table className="w-full text-left">
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+              <div className="overflow-x-auto custom-scrollbar pb-2">
+                <table className="w-full min-w-[750px] text-left">
                 <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Заголовок</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Ціна</th>
-                    <th className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Телефон</th>
-                    <th className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Тип</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Телефон</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Тип</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
                   </tr>
                 </thead>
@@ -1788,8 +1791,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                         </div>
                       </td>
                       <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-base whitespace-nowrap">{ad.price} грн</td>
-                      <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.phone}</td>
-                      <td className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4">
+                      <td className="px-3 md:px-6 py-3 md:py-4 text-sm md:text-base">{ad.phone}</td>
+                      <td className="px-3 md:px-6 py-3 md:py-4">
                         <span className={`px-2 py-1 rounded-full text-[10px] md:text-xs font-medium ${ad.is_placeholder ? 'bg-stone-100 text-stone-600' : 'bg-emerald-50 text-emerald-600'}`}>
                           {ad.is_placeholder ? 'Заглушка' : 'Активне'}
                         </span>
@@ -1835,7 +1838,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </table>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
         {activeView === 'reviews' && (
           <div className="space-y-4 md:space-y-6">
@@ -1851,14 +1855,15 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden overflow-x-auto no-scrollbar">
-              <table className="w-full text-left">
+            <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+              <div className="overflow-x-auto custom-scrollbar pb-2">
+                <table className="w-full min-w-[750px] text-left">
                 <thead className="bg-stone-50 border-b border-stone-200">
                   <tr>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Клієнт</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Рейтинг</th>
-                    <th className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Коментар</th>
-                    <th className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Дата</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Коментар</th>
+                    <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider">Дата</th>
                     <th className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm font-semibold text-stone-500 uppercase tracking-wider text-right">Дії</th>
                   </tr>
                 </thead>
@@ -1878,10 +1883,10 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                           ))}
                         </div>
                       </td>
-                      <td className="hidden sm:table-cell px-4 md:px-6 py-3 md:py-4">
+                      <td className="px-3 md:px-6 py-3 md:py-4">
                         <p className="text-xs md:text-sm text-stone-600 line-clamp-2 max-w-md">{review.comment}</p>
                       </td>
-                      <td className="hidden md:table-cell px-4 md:px-6 py-3 md:py-4 text-[10px] md:text-sm text-stone-500">
+                      <td className="px-3 md:px-6 py-3 md:py-4 text-[10px] md:text-sm text-stone-500">
                         {new Date(review.created_at).toLocaleDateString('uk-UA')}
                       </td>
                       <td className="px-3 md:px-6 py-3 md:py-4 text-right">
@@ -1905,7 +1910,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
               </table>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
         {activeView === 'stats' && (
           <div className="space-y-6 md:space-y-8">
